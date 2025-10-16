@@ -1,104 +1,377 @@
-import React, { useMemo, useState } from 'react';
-import { View, FlatList, RefreshControl, Alert } from 'react-native';
-import { Text } from 'react-native-paper';
-import { useRoute } from '@react-navigation/native';
-import dayjs from 'dayjs';
+// pickle-courts/src/screens/CourtScreen.tsx
+import React, { useMemo, useState, useCallback } from "react";
+import { View, FlatList, RefreshControl, Alert, Image } from "react-native";
+import {
+  Text,
+  ActivityIndicator,
+  Card,
+  Button,
+  Badge,
+  Appbar,
+  Divider,
+} from "react-native-paper";
+import { useRoute, useNavigation, useFocusEffect } from "@react-navigation/native";
+import dayjs from "dayjs";
 
-import { useAvailability } from '../hooks/useAvailability';
-import { useBookSlot, useCancelBooking, useUpdateBookingNote } from '../hooks/useBookingMutations';
-import type { Slot } from '../types/slot';
+import { useAvailability } from "../hooks/useAvailability";
+import {
+  useBookSlot,
+  useCancelBooking,
+  useUpdateBookingNote,
+} from "../hooks/useBookingMutations";
+import type { Slot } from "../types/slot";
+import CourtHeader from "../components/CourtHeader";
+import SlotCard from "../components/SlotCard";
+import NoteDialog from "../components/NoteDialog";
+import PaymentMethodDialog from "../components/PaymentMethodDialog";
 
-import CourtHeader from '../components/CourtHeader';
-import SlotCard from '../components/SlotCard';
-import NoteDialog from '../components/NoteDialog';
+import { useTransferInitiate } from "../hooks/useTransferInitiate";
+import { ensureAuth } from "../utils/authGuard";
+import { useMe } from "../hooks/useMe";
 
 export default function CourtScreen() {
   const route = useRoute<any>();
+  const navigation = useNavigation<any>();
   const { courtId, courtName } = route.params as { courtId: string; courtName: string };
 
-  const today = dayjs().format('YYYY-MM-DD');
-  const tomorrow = dayjs().add(1, 'day').format('YYYY-MM-DD');
+  const today = dayjs().format("YYYY-MM-DD");
+  const tomorrow = dayjs().add(1, "day").format("YYYY-MM-DD");
   const [date, setDate] = useState<string>(today);
 
-  const q = useAvailability(courtId, date);
+  // data & mutations
+  const { slots, isLoading, error, refetch } = useAvailability(courtId, date);
   const bookM = useBookSlot(courtId, date);
   const cancelM = useCancelBooking(courtId, date);
   const updateNoteM = useUpdateBookingNote(courtId, date);
+  const initiate = useTransferInitiate();
 
-  // Dialog note
-  const [openNote, setOpenNote] = useState(false);
-  const [draftNote, setDraftNote] = useState('');
-  const [pendingSlot, setPendingSlot] = useState<Slot | null>(null);
-  const [mode, setMode] = useState<'book' | 'edit'>('book');
+  // user info
+  const me = useMe();
+  const meIdRaw =
+    (me.data as any)?._id ||
+    (me.data as any)?.id ||
+    (me.data as any)?.user?.id ||
+    (me.data as any)?.user?._id;
+  const meId = String(meIdRaw ?? "");
 
-  const openBookDialog = (slot: Slot) => {
-    setMode('book'); setPendingSlot(slot); setDraftNote(''); setOpenNote(true);
-  };
-  const openEditDialog = (slot: Slot) => {
-    setMode('edit'); setPendingSlot(slot); setDraftNote(slot.note || ''); setOpenNote(true);
-  };
+  const username =
+    (me.data as any)?.username ||
+    (me.data as any)?.name ||
+    (me.data as any)?.user?.username ||
+    "";
 
-  const header = useMemo(
-    () => <CourtHeader courtName={courtName} date={date} today={today} tomorrow={tomorrow} onChangeDate={setDate} />,
-    [courtName, date, today, tomorrow]
+  // always refresh when screen focuses
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [courtId, date, refetch])
   );
 
-  if (q.isLoading) return <Text style={{ padding: 16 }}>Đang tải…</Text>;
-  if (q.error) return <Text style={{ padding: 16, color: 'red' }}>Không tải được khung giờ</Text>;
+  // dialogs state
+  const [openNote, setOpenNote] = useState(false);
+  const [draftNote, setDraftNote] = useState("");
+  const [pendingSlot, setPendingSlot] = useState<Slot | null>(null); // for "book"
+  const [pendingBookingId, setPendingBookingId] = useState<string | null>(null); // for "edit"
+  const [mode, setMode] = useState<"book" | "edit">("book");
+
+  // payment method dialog
+  const [pmVisible, setPmVisible] = useState(false);
+  const [pmValue, setPmValue] = useState<"prepay_transfer" | "pay_later">("pay_later");
+
+  const requireAuth = async () => !!(await ensureAuth(navigation));
+
+  // ============== handlers ==============
+  const openBookDialog = async (slot: Slot) => {
+    if (!(await requireAuth())) return;
+
+    // chặn đặt khi bị người khác block
+    const isBlocked = (slot as any).status === "blocked";
+    const mine = isBlocked && String((slot as any).booking?.userId || "") === meId;
+    if (isBlocked && !mine) {
+      Alert.alert("Thông báo", "Suất này đã có người giữ/đặt rồi.");
+      refetch();
+      return;
+    }
+
+    setMode("book");
+    setPendingSlot(slot);
+    setPendingBookingId(null);
+    setDraftNote("");
+    setOpenNote(true);
+  };
+
+  // SlotCard sẽ gửi bookingId string vào đây
+  const openEditDialog = async (bookingId: string) => {
+    if (!(await requireAuth())) return;
+    const slot = (slots as any[]).find(
+      (s) => (s as any).bookingId === bookingId || (s as any)?.booking?.id === bookingId
+    );
+    setMode("edit");
+    setPendingSlot(null);
+    setPendingBookingId(bookingId);
+    setDraftNote((slot as any)?.note || "");
+    setOpenNote(true);
+  };
+
+  // ---------- UI pieces (UI-only, no logic change) ----------
+  const StickyHeader = useMemo(
+    () => (
+      <Appbar.Header elevated mode="center-aligned">
+        <Appbar.BackAction onPress={() => navigation.goBack()} />
+        <Appbar.Content title="Đặt sân" subtitle={courtName} />
+      </Appbar.Header>
+    ),
+    [navigation, courtName]
+  );
+
+  const CourtInfoCard = (
+    <Card mode="elevated" style={{ marginHorizontal: 16, marginTop: 12 }}>
+      <Card.Content style={{ flexDirection: "row", gap: 16 }}>
+        <Image
+          source={require("../../assets/pb6.jpg")} // placeholder tuỳ ý
+          style={{ width: 80, height: 80, borderRadius: 12 }}
+          resizeMode="cover"
+        />
+        <View style={{ flex: 1 }}>
+          <Text variant="titleMedium" style={{ marginBottom: 4 }}>
+            {courtName}
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+            <Text style={{ opacity: 0.7 }}>Sân Pickleball Thảo Điền</Text>
+          </View>
+          <Badge style={{ alignSelf: "flex-start" }} size={22}>
+            Pickleball
+          </Badge>
+        </View>
+      </Card.Content>
+    </Card>
+  );
+
+  const DatePickerCard = (
+    <Card mode="elevated" style={{ marginHorizontal: 16, marginTop: 12 }}>
+      <Card.Title
+        title="Chọn ngày"
+        titleVariant="titleSmall"
+        left={(props) => <Appbar.Action {...props} icon="calendar" />}
+      />
+      <Card.Content style={{ paddingBottom: 12 }}>
+        {/* Giữ CourtHeader để đổi ngày (không đổi logic) */}
+        <CourtHeader
+          courtName={courtName}
+          date={date}
+          today={today}
+          tomorrow={tomorrow}
+          onChangeDate={setDate}
+        />
+      </Card.Content>
+    </Card>
+  );
+
+  const SlotsSectionHeader = (
+    <Card mode="elevated" style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 8 }}>
+      <Card.Title
+        title="Chọn khung giờ"
+        titleVariant="titleSmall"
+        left={(props) => <Appbar.Action {...props} icon="clock-outline" />}
+      />
+      <Divider />
+    </Card>
+  );
+
+  // loading / error
+  if (!courtId) {
+    return (
+      <View style={{ flex: 1, padding: 16, justifyContent: "center", alignItems: "center" }}>
+        <Text style={{ color: "red" }}>Thiếu courtId</Text>
+      </View>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "white" }}>
+        {StickyHeader}
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <ActivityIndicator />
+          <Text style={{ marginTop: 8 }}>Đang tải khung giờ…</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (error) {
+    const err: any = error;
+    return (
+      <View style={{ flex: 1, backgroundColor: "white" }}>
+        {StickyHeader}
+        <Text style={{ padding: 16, color: "red" }}>
+          Không tải được khung giờ{"\n"}
+          {String(err?.response?.status || "")} {JSON.stringify(err?.response?.data || err?.message)}
+        </Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={{ flex: 1, padding: 16 }}>
-      {header}
+    <View style={{ flex: 1, backgroundColor: "#FAFAFA" }}>
+      {StickyHeader}
 
       <FlatList
-        data={q.data ?? []}
-        keyExtractor={(s) => s.id}
-        refreshControl={<RefreshControl refreshing={q.isFetching} onRefresh={() => q.refetch()} />}
-        ListEmptyComponent={<Text>Không có khung giờ</Text>}
-        renderItem={({ item }) => (
-          <SlotCard
-            slot={item}
-            isBooking={bookM.isPending}
-            onBook={openBookDialog}
-            onCancel={(id) => cancelM.mutate(id, {
-              onSuccess: () => Alert.alert('Đã hủy', 'Bạn đã hủy đặt sân.'),
-              onError: (err: any) => Alert.alert('Lỗi', err?.response?.data?.error || err?.message || 'Hủy thất bại'),
-            })}
-            onEditNote={openEditDialog}
-          />
-        )}
+        data={slots}
+        keyExtractor={(s, i) => (s as any).id ?? `${s.courtId}|${s.date}|${s.startAt}-${s.endAt}-${i}`}
+        refreshControl={<RefreshControl refreshing={isLoading} onRefresh={() => refetch()} />}
+        // Header: info card + date picker + section header (UI-only)
+        ListHeaderComponent={
+          <>
+            {CourtInfoCard}
+            {DatePickerCard}
+            {SlotsSectionHeader}
+          </>
+        }
+        ListEmptyComponent={
+          <Text style={{ paddingHorizontal: 16, paddingVertical: 12 }}>Không có khung giờ</Text>
+        }
+        ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
+        contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 16 }}
+        renderItem={({ item }) => {
+          const isMine =
+            !!(item as any).bookedByMe ||
+            String((item as any).booking?.userId || "") === meId;
+
+          return (
+            <Card mode="elevated">
+              <Card.Content style={{ paddingVertical: 8 }}>
+                <SlotCard
+                  slot={{ ...(item as any), isMine }}
+                  meId={meId}
+                  // khóa nút đặt nếu slot đang bị block bởi người khác
+                  disabled={
+                    (item as any).status === "blocked" &&
+                    (item as any).booking?.userId &&
+                    String((item as any).booking.userId) !== meId
+                  }
+                  isBooking={bookM.isPending}
+                  onBook={openBookDialog}
+                  onCancel={async (bookingId) => {
+                    if (!(await requireAuth())) return;
+                    cancelM.mutate(bookingId, {
+                      onSuccess: () => refetch(),
+                      onError: (err: any) =>
+                        Alert.alert(
+                          "Lỗi",
+                          err?.response?.data?.error || err?.message || "Hủy thất bại"
+                        ),
+                    });
+                  }}
+                  onEditNote={openEditDialog}
+                />
+              </Card.Content>
+            </Card>
+          );
+        }}
       />
 
+      {/* Note dialog (giữ nguyên logic) */}
       <NoteDialog
         visible={openNote}
         mode={mode}
         draftNote={draftNote}
         setDraftNote={setDraftNote}
         onClose={() => setOpenNote(false)}
-        onSubmit={() => {
+        onSubmit={async () => {
           setOpenNote(false);
-          if (mode === 'book' && pendingSlot) {
-            bookM.mutate(
-              { slot: pendingSlot, note: draftNote.trim() || undefined },
+          if (!(await requireAuth())) return;
+
+          if (mode === "book" && pendingSlot) {
+            // chọn phương thức thanh toán sau khi nhập ghi chú
+            setPmValue("pay_later");
+            setPmVisible(true);
+          }
+
+          if (mode === "edit" && pendingBookingId) {
+            updateNoteM.mutate(
+              { bookingId: pendingBookingId, note: draftNote },
               {
-                onSuccess: () => Alert.alert('Thành công', 'Bạn đã đặt sân!'),
-                onError: (err: any) => {
-                  const msg = err?.response?.status === 409
-                    ? 'Suất này vừa có người đặt mất rồi.'
-                    : err?.response?.data?.error || err?.message || 'Đặt sân thất bại';
-                  Alert.alert('Lỗi', msg);
-                },
+                onSuccess: () => refetch(),
+                onError: (err: any) =>
+                  Alert.alert(
+                    "Lỗi",
+                    err?.response?.data?.error || err?.message || "Cập nhật thất bại"
+                  ),
               }
             );
           }
-          if (mode === 'edit' && pendingSlot?.bookingId) {
-            updateNoteM.mutate(
-              { bookingId: pendingSlot.bookingId, note: draftNote },
-              {
-                onSuccess: () => Alert.alert('OK', 'Đã cập nhật ghi chú.'),
-                onError: (err: any) => Alert.alert('Lỗi', err?.response?.data?.error || err?.message || 'Cập nhật thất bại'),
-              }
-            );
+        }}
+      />
+
+      {/* Payment method dialog */}
+      <PaymentMethodDialog
+        visible={pmVisible}
+        value={pmValue}
+        onChange={setPmValue}
+        onClose={() => setPmVisible(false)}
+        onConfirm={async () => {
+          if (!pendingSlot) return;
+          setPmVisible(false);
+
+          try {
+            if (pmValue === "pay_later") {
+              // ===================== CÁCH B =====================
+              // 👉 Đi qua BookingScreen để xác nhận, KHÔNG tạo booking ở đây
+              const n = (draftNote || "").trim();
+
+              navigation.navigate("BookingScreen", {
+                // Nếu có venue info trong params của CourtScreen, truyền tiếp (không bắt buộc)
+                venueId: (route as any)?.params?.venueId,
+                venueName: (route as any)?.params?.venueName,
+
+                // Court & thời gian/giá từ slot đang chọn
+                courtId,
+                courtName,
+                date,
+                startAt: pendingSlot.startAt,
+                endAt: pendingSlot.endAt,
+                price: pendingSlot.price,
+
+                // Ghi chú (nếu có)
+                note: n,
+              });
+
+              return;
+            }
+
+            // ========= prepay_transfer (giữ nguyên) =========
+            if (pendingSlot.price == null) {
+              Alert.alert("Lỗi", "Không xác định được giá của khung giờ.");
+              return;
+            }
+
+            const booking = await bookM.mutateAsync({
+              slot: pendingSlot,
+              paymentMethod: "prepay_transfer",
+              note: (draftNote || "").trim() || undefined,
+            });
+
+            const createdId = (booking as any)._id ?? (booking as any).id;
+
+            const info = await initiate.mutateAsync({
+              bookingId: createdId,
+              amount: pendingSlot.price!,
+            });
+
+            navigation.navigate("PaymentGuide", {
+              bookingId: createdId,
+              amount: (info as any).amount ?? pendingSlot.price,
+              username,
+              vietqrUrl: (info as any).vietqr?.url,
+            });
+            return;
+          } catch (err: any) {
+            const msg =
+              err?.response?.status === 409
+                ? "Suất này vừa có người đặt mất rồi."
+                : err?.response?.data?.error || err?.message || "Khởi tạo thanh toán thất bại";
+            Alert.alert("Lỗi", msg);
           }
         }}
       />

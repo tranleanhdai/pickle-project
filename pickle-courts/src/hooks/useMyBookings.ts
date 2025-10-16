@@ -1,0 +1,121 @@
+// src/hooks/useMyBookings.ts
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import dayjs from "dayjs";
+import { api } from "../api/client";
+import { useMemo } from "react";
+/* ======================= Types ======================= */
+export type PaymentMethod = "prepay_transfer" | "pay_later";
+export type PaymentStatus =
+  | "pending"
+  | "awaiting_transfer"
+  | "verifying"
+  | "paid"
+  | "failed"
+  | "expired";
+
+export type Booking = {
+  id: string;
+  userId?: string;
+  courtId: string;
+  courtName?: string;        // server đã trả kèm trong /bookings
+  date: string;              // YYYY-MM-DD
+  startAt: string;           // "HH:mm"
+  endAt: string;             // "HH:mm"
+  price: number;
+  note?: string;
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
+  holdUntil?: string | Date | null;
+  createdAt?: string;
+  updatedAt?: string;
+  [k: string]: any;
+};
+
+/* ======================= Fetcher ======================= */
+async function fetchMyBookings(): Promise<Booking[]> {
+  const r = await api.get("/bookings");
+  const raw = Array.isArray(r.data) ? r.data : r.data?.items ?? [];
+  return (raw as any[]).map((b) => ({
+    id: String(b.id ?? b._id ?? ""),
+    userId: b.userId ? String(b.userId) : undefined,
+    courtId: String(b.courtId ?? ""),
+    courtName: b.courtName,
+    date: String(b.date ?? ""),
+    startAt: String(b.startAt ?? ""),
+    endAt: String(b.endAt ?? ""),
+    price: Number(b.price ?? 0),
+    note: typeof b.note === "string" ? b.note : "",
+    paymentMethod: (b.paymentMethod ?? "pay_later") as PaymentMethod,
+    paymentStatus: (b.paymentStatus ?? "pending") as PaymentStatus,
+    holdUntil: b.holdUntil ?? null,
+    createdAt: b.createdAt ? String(b.createdAt) : undefined,
+    updatedAt: b.updatedAt ? String(b.updatedAt) : undefined,
+    ...b,
+  }));
+}
+
+/* ======================= Hook ======================= */
+export function useMyBookings() {
+  return useQuery<Booking[], Error>({
+    queryKey: ["my-bookings"],
+    queryFn: fetchMyBookings,
+    staleTime: 30_000,
+    retry: 1,
+    // v5: thay keepPreviousData bằng placeholderData: keepPreviousData
+    placeholderData: keepPreviousData,
+  });
+}
+
+/* ======================= UI helpers ======================= */
+export function bookingDisplayName(b: Booking): string {
+  return b.courtName || "—";
+}
+export function bookingDisplayDate(b: Booking): string {
+  return b.date ? dayjs(b.date).format("DD/MM/YYYY") : "—";
+}
+export function bookingTimeRange(b: Booking): string {
+  if (b.startAt && b.endAt) return `${b.startAt} - ${b.endAt}`;
+  return b.startAt || "—";
+}
+
+/** so sánh thời gian bắt đầu (asc/desc) + chia nhóm nếu cần */
+export function compareByDateStartAsc(a: Booking, b: Booking) {
+  const ta = dayjs(`${a.date}T${a.startAt}:00`).valueOf();
+  const tb = dayjs(`${b.date}T${b.startAt}:00`).valueOf();
+  return ta - tb;
+}
+export function compareByDateStartDesc(a: Booking, b: Booking) {
+  const ta = dayjs(`${a.date}T${a.startAt}:00`).valueOf();
+  const tb = dayjs(`${b.date}T${b.startAt}:00`).valueOf();
+  return tb - ta;
+}
+export function partitionUpcomingPast(items: Booking[]) {
+  const now = Date.now();
+  const upcoming: Booking[] = [];
+  const past: Booking[] = [];
+  for (const b of items) {
+    const t = dayjs(`${b.date}T${b.startAt}:00`).valueOf();
+    (t > now ? upcoming : past).push(b);
+  }
+  return { upcoming, past };
+}
+export function useRecentBookings(limit = 3) {
+  const q = useMyBookings();
+  const data = useMemo(() => {
+    const items = q.data ?? [];
+    // sắp xếp mới nhất trước rồi lấy top N
+    return items
+      .slice()
+      .sort(compareByDateStartDesc) // đã có ở file này
+      .slice(0, limit);
+  }, [q.data, limit]);
+
+  // trả lại cùng “shape” dễ dùng
+  return {
+    data,
+    isLoading: q.isLoading,
+    isRefetching: q.isRefetching,
+    refetch: q.refetch,
+    error: q.error,
+  };
+}

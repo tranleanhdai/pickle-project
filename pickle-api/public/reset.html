@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Đặt lại mật khẩu</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #74ebd5, #9face6);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+      padding: 32px;
+      width: 100%;
+      max-width: 380px;
+      text-align: center;
+      animation: fadeIn 0.6s ease;
+    }
+    h2 { margin-bottom: 16px; color: #333; }
+    input {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 15px;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      border: none;
+      border-radius: 8px;
+      background: #4a67f5;
+      color: #fff;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    button:hover { background: #364fc7; }
+    .msg { margin-top: 15px; font-size: 14px; }
+    .success { color: #2e7d32; }
+    .error { color: #c62828; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>Đặt lại mật khẩu</h2>
+    <input type="password" id="password" placeholder="Mật khẩu mới" />
+    <input type="password" id="confirm" placeholder="Nhập lại mật khẩu" />
+    <button onclick="resetPassword()">Xác nhận</button>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <script>
+    // Base API = origin của server đang phục vụ file này (VD: http://192.168.88.143:3000)
+    const apiBase = (location.origin || "").replace(/\/+$/, "") + "/api";
+
+    // Lấy token từ URL (?token=... hoặc #token=...)
+    function getTokenFromUrl() {
+      const p = new URLSearchParams(location.search);
+      let t = p.get("token");
+      if (!t && location.hash) {
+        const h = new URLSearchParams(location.hash.replace(/^#/, ""));
+        t = h.get("token");
+      }
+      return t || "";
+    }
+
+    const token = getTokenFromUrl();
+
+    if (!token) {
+      const el = document.getElementById("msg");
+      el.textContent = "Thiếu token trong URL. Hãy mở đúng link từ email.";
+      el.className = "msg error";
+    }
+
+    async function resetPassword() {
+      const msgEl = document.getElementById("msg");
+      const pass = document.getElementById("password").value.trim();
+      const confirm = document.getElementById("confirm").value.trim();
+
+      msgEl.textContent = "";
+      msgEl.className = "msg";
+
+      if (!token) {
+        msgEl.textContent = "Thiếu token. Hãy mở link trong email.";
+        msgEl.classList.add("error");
+        return;
+      }
+      if (pass.length < 3) {
+        msgEl.textContent = "Mật khẩu phải >= 3 ký tự.";
+        msgEl.classList.add("error");
+        return;
+      }
+      if (pass !== confirm) {
+        msgEl.textContent = "Mật khẩu nhập lại không khớp.";
+        msgEl.classList.add("error");
+        return;
+      }
+
+      try {
+        const res = await fetch(`${apiBase}/auth/password/confirm`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token, newPassword: pass }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          msgEl.textContent = "✅ Đặt lại mật khẩu thành công! Bạn có thể đăng nhập lại.";
+          msgEl.classList.add("success");
+        } else {
+          msgEl.textContent = data.error || "Lỗi đặt lại mật khẩu.";
+          msgEl.classList.add("error");
+        }
+      } catch (err) {
+        msgEl.textContent = "Không thể kết nối server.";
+        msgEl.classList.add("error");
+      }
+    }
+  </script>
+</body>
+</html>

@@ -12,21 +12,58 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
+    "scheme": "picklecourts",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      },
+      "bundleIdentifier": "com.tranleanh.picklecourts"
     },
     "android": {
+      "package": "com.tranleanh.picklecourts",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "usesCleartextTraffic": true,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": false,
+          "category": ["BROWSABLE", "DEFAULT"],
+          "data": [
+            {
+              "scheme": "picklecourts"
+            }
+          ]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ứng dụng cần quyền để chọn ảnh từ thư viện.",
+          "cameraPermission": "Ứng dụng cần quyền để chụp ảnh và đăng bài."
+        }
+      ],
+      "expo-font",
+      "expo-asset"
+    ],
     "extra": {
-      "apiUrl": "http://192.168.88.143:3000"
+      "apiUrl": "http://192.168.88.143:3000",
+      "EXPO_PUBLIC_CLOUDINARY_CLOUD": "dqtssbmtq",
+      "EXPO_PUBLIC_CLOUDINARY_PRESET": "pickle_unsigned",
+      "eas": {
+        "projectId": "bfb530f1-aae4-4e1a-9fd8-425752debcf1"
+      }
     }
   }
 }

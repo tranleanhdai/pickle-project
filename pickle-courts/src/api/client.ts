@@ -1,30 +1,45 @@
-import axios from "axios";
-import Constants from "expo-constants";
+// pickle-courts/src/api/client.ts
+import axios, { AxiosHeaders, type InternalAxiosRequestConfig } from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { createNavigationContainerRef } from "@react-navigation/native";
 
-const c: any = Constants;
-const API_URL =
-  c.expoConfig?.extra?.apiUrl ??
-  c.manifest?.extra?.apiUrl ??
-  "http://192.168.1.174:3000"; // fallback cuối
+export const navigationRef = createNavigationContainerRef<any>();
 
-console.log("API_URL USES =>", API_URL);
+// KHÔNG tự động lấy IP. Dev sửa FALLBACK/DEV_HOST theo mạng LAN.
+const FALLBACK = "http://192.168.88.143:3000";           // 👈 sửa IP LAN của bạn nếu cần
+const DEV_HOST = process.env.EXPO_PUBLIC_DEV_HOST;    // ví dụ: 192.168.1.4
+
+const ROOT = __DEV__
+  ? ((DEV_HOST ? `http://${DEV_HOST}:3000` : FALLBACK).replace(/\/+$/, ""))
+  : (process.env.EXPO_PUBLIC_API_URL as string).replace(/\/+$/, "");
 
 export const api = axios.create({
-  baseURL: API_URL + "/api",
+  baseURL: `${ROOT}/api`,
   timeout: 10000,
 });
 
-// log lỗi để bắt nhanh
+console.log("API_ROOT =", ROOT);
+console.log("api baseURL =", api.getUri());
+
+// attach token
+api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
+  const token = await AsyncStorage.getItem("token");
+  if (token) {
+    const headers = (config.headers ?? new AxiosHeaders()) as AxiosHeaders;
+    headers.set("Authorization", `Bearer ${token}`);
+    config.headers = headers;
+  }
+  return config;
+});
+
+// 401 -> logout
 api.interceptors.response.use(
-  (r) => r,
-  (err) => {
-    console.log("API ERROR =>", JSON.stringify({
-      url: err.config?.baseURL + err.config?.url,
-      message: err.message,
-      code: err.code,
-      response: err.response?.status,
-      data: err.response?.data,
-    }, null, 2));
-    return Promise.reject(err);
+  (res) => res,
+  async (error) => {
+    if (error?.response?.status === 401) {
+      await AsyncStorage.removeItem("token");
+      if (navigationRef.isReady()) navigationRef.navigate("Login");
+    }
+    return Promise.reject(error);
   }
 );
