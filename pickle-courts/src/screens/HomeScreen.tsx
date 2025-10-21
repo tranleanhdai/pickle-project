@@ -11,6 +11,7 @@ import {
   StyleSheet,
   Animated,
   Pressable,
+  Alert,
 } from "react-native";
 import { Text, Button, ActivityIndicator, FAB, Card } from "react-native-paper";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
@@ -56,13 +57,6 @@ export default function HomeScreen() {
     console.log("[Home] token exist? ->", !!t, "| baseURL =", api.getUri());
   }, []);
   useFocusEffect(useCallback(() => { refreshTokenState(); }, [refreshTokenState]));
-
-  const handleLogout = useCallback(async () => {
-    await AsyncStorage.removeItem("token");
-    setHasToken(false);
-    // đưa về tab cá nhân (để hiện màn đăng nhập) hoặc mở modal Login
-    navigation.navigate("MainTabs", { screen: "ProfileTab", params: { screen: "ProfileMain" } });
-  }, [navigation]);
 
   /* ===== Tabs ===== */
   const [mode, setMode] = useState<TabMode>("posts");
@@ -279,7 +273,7 @@ export default function HomeScreen() {
               <Text style={{ color: "rgba(255,255,255,0.9)" }}>Đặt sân thể thao dễ dàng</Text>
             </View>
 
-            {/* Icon Profile sáng nhẹ khi chọn */}
+            {/* Icon Profile */}
             <Animated.View style={{
               transform: [{ scale }],
               borderRadius: 20,
@@ -335,125 +329,66 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               )}
             </View>
-
-            {/* Overlay click-outside */}
-            {suggestOpen && (
-              <TouchableOpacity
-                activeOpacity={1}
-                onPress={() => setOpen(false)}
-                style={{
-                  ...StyleSheet.absoluteFillObject,
-                  top: inputH + 6,
-                  backgroundColor: "transparent",
-                }}
-              />
-            )}
-
-            {/* Dropdown */}
-            {suggestOpen && (
-              <View
-                style={{
-                  position: "absolute",
-                  left: 0,
-                  right: 0,
-                  top: inputH + 6,
-                  backgroundColor: "#fff",
-                  borderRadius: 16,
-                  overflow: "hidden",
-                  shadowColor: "#000",
-                  shadowOpacity: 0.15,
-                  shadowRadius: 20,
-                  elevation: 20,
-                  maxHeight: 340,
-                  paddingVertical: 6,
-                }}
-              >
-                <FlatList
-                  data={suggestions}
-                  keyExtractor={(s, i) => `${s.type}-${s.id}-${i}`}
-                  ItemSeparatorComponent={() => (
-                    <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: "#eee" }} />
-                  )}
-                  renderItem={({ item: s }) => (
-                    <TouchableOpacity
-                      activeOpacity={0.8}
-                      onPress={() => {
-                        if (s.type === "venue") {
-                          setMode("venues");
-                          setVenueId(s.id);
-                          setCourtId(null);
-                        } else {
-                          if (s.venueId) setVenueId(s.venueId);
-                          setCourtId(s.id);
-                          setMode("posts");
-                        }
-                        setSearch("");
-                        setOpen(false);
-                      }}
-                      style={{
-                        paddingHorizontal: 12,
-                        paddingVertical: 10,
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 12,
-                      }}
-                    >
-                      {!!s.cover && (
-                        <Image
-                          source={{ uri: s.cover }}
-                          style={{ width: 44, height: 32, borderRadius: 8 }}
-                          resizeMode="cover"
-                        />
-                      )}
-
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontWeight: "700" }}>{s.title}</Text>
-                        {!!s.subtitle && (
-                          <Text style={{ fontSize: 12, color: "#6b7280" }} numberOfLines={1}>
-                            {s.subtitle}
-                          </Text>
-                        )}
-                      </View>
-
-                      {/* chip loại */}
-                      <View
-                        style={{
-                          paddingHorizontal: 10,
-                          paddingVertical: 4,
-                          borderRadius: 999,
-                          backgroundColor: s.type === "venue" ? "#eef2ff" : "#e0f2fe",
-                        }}
-                      >
-                        <Text style={{ fontSize: 12, color: "#374151" }}>
-                          {s.type === "venue" ? "Địa điểm" : "Sân"}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  )}
-                />
-              </View>
-            )}
           </View>
         </View>
       </View>
 
       {/* QUICK ACTIONS (card nổi) */}
-      <View style={{
-        paddingHorizontal: 16,
-        marginTop: suggestOpen ? 12 : -26, // mở dropdown thì không đè
-        marginBottom: 12,
-        zIndex: 5,
-      }}>
+      <View
+        style={{
+          paddingHorizontal: 16,
+          marginTop: suggestOpen ? 12 : -26,
+          marginBottom: 12,
+          zIndex: 5,
+        }}
+      >
         <Card style={{ borderRadius: 20, padding: 14, elevation: 6 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <ActionTile label="Đặt sân" color="#0B1220" emoji="📅" onPress={() => navigation.navigate("Booking")} />
-            <ActionTile label="Lịch sử" color="#0F766E" emoji="🕘" onPress={() => {}} />
+            {/* Đặt sân -> vào thẳng CourtScreen */}
+            <ActionTile
+              label="Đặt sân"
+              color="#0B1220"
+              emoji="📅"
+              onPress={() => {
+                if (courtId) {
+                  const vName = venuesQ.data?.find((v: any) => idOf(v) === venueId)?.name ?? undefined;
+                  const c = courtsQ.data?.find((x: any) => idOf(x) === courtId);
+                  const cover =
+                    c?.coverUrl ?? postItems?.[0]?.images?.[0]?.url ?? null;
+
+                  navigation.navigate("Court", {
+                    courtId,
+                    courtName: c?.name ?? "Sân",
+                    venueName: vName,
+                    coverUrl: cover,
+                  });
+                } else {
+                  Alert.alert("Chưa chọn sân", "Vui lòng chọn địa điểm và sân trước.");
+                }
+              }}
+            />
+
+            {/* Lịch sử */}
+            <ActionTile
+              label="Lịch sử"
+              color="#0F766E"
+              emoji="🕘"
+              onPress={() => navigation.navigate("MainTabs", { screen: "BookingsTab" })}
+            />
+
             <ActionTile label="Ưu đãi" color="#0B4F71" emoji="📈" onPress={() => {}} />
+
+            {/* Hồ sơ */}
             <ActionTile
               label="Hồ sơ"
               color="#F59E0B"
               emoji="👤"
-              onPress={() => navigation.navigate("MainTabs", { screen: "ProfileTab", params: { screen: "ProfileMain" } })}
+              onPress={() =>
+                navigation.navigate("MainTabs", {
+                  screen: "ProfileTab",
+                  params: { screen: "ProfileMain" },
+                })
+              }
             />
           </View>
         </Card>
@@ -461,50 +396,50 @@ export default function HomeScreen() {
     </View>
   );
 
-  /* ===== Header của tab Bài đăng ===== */
+  /* ===== Header của tab Bài đăng (KHÔNG còn “Địa điểm nổi bật” ở đây) ===== */
   const selectedCourt = courtsQ.data?.find((c: any) => idOf(c) === courtId);
   const header = (
-    <View>
-      {Hero}
-
-      <View style={{ paddingHorizontal: 16 }}>
-        {/* Tabs */}
-        <View style={{ flexDirection: "row", marginBottom: 12 }}>
-          <Chip label="Bài đăng" active onPress={() => {}} />
-          <Chip label="Địa điểm" onPress={() => setMode("venues")} />
-        </View>
-
-        {VenuePills}
-        {CourtPills}
-
-        {(selectedCourt?.coverUrl || postItems[0]?.images?.[0]?.url) && (
-          <CourtHero
-            venueName={venuesQ.data?.find((v: any) => idOf(v) === venueId)?.name}
-            courtName={selectedCourt?.name}
-            imageUrl={selectedCourt?.coverUrl ?? postItems[0]?.images?.[0]?.url ?? null}
-          />
-        )}
-
-        {/* Featured Venues (hiển thị HẾT) */}
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 16, marginBottom: 8 }}>
-          <Text style={{ fontWeight: "bold", fontSize: 16 }}>Địa điểm nổi bật</Text>
-          <Button compact onPress={() => setMode("venues")}>Xem tất cả</Button>
-        </View>
-        {Array.isArray(venuesQ.data) && (venuesQ.data as Venue[]).map((v: Venue) => (
-          <View key={idOf(v) ?? String(v.name)} style={{ marginBottom: 8 }}>
-            <VenueCard
-              venue={v}
-              onPress={() =>
-                navigation.navigate("Venue", {
-                  venueId: idOf(v),
-                  venueName: v.name,
-                  venueAddress: (v as any).address,
-                })
-              }
-            />
-          </View>
-        ))}
+    <View style={{ paddingHorizontal: 16 }}>
+      {/* Tabs */}
+      <View style={{ flexDirection: "row", marginBottom: 12 }}>
+        <Chip label="Bài đăng" active onPress={() => {}} />
+        <Chip label="Địa điểm" onPress={() => setMode("venues")} />
       </View>
+
+      {VenuePills}
+      {CourtPills}
+
+      {(selectedCourt?.coverUrl || postItems[0]?.images?.[0]?.url) && (
+        <CourtHero
+          venueName={venuesQ.data?.find((v: any) => idOf(v) === venueId)?.name}
+          courtName={selectedCourt?.name}
+          imageUrl={selectedCourt?.coverUrl ?? postItems[0]?.images?.[0]?.url ?? null}
+        />
+      )}
+    </View>
+  );
+
+  /* ===== Footer: ĐỊA ĐIỂM NỔI BẬT (đưa xuống cuối danh sách bài) ===== */
+  const footer = (
+    <View style={{ paddingHorizontal: 16, marginTop: 16, marginBottom: 8 }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <Text style={{ fontWeight: "bold", fontSize: 16 }}>Địa điểm nổi bật</Text>
+        <Button compact onPress={() => setMode("venues")}>Xem tất cả</Button>
+      </View>
+      {Array.isArray(venuesQ.data) && (venuesQ.data as Venue[]).map((v: Venue) => (
+        <View key={idOf(v) ?? String(v.name)} style={{ marginBottom: 8 }}>
+          <VenueCard
+            venue={v}
+            onPress={() =>
+              navigation.navigate("Venue", {
+                venueId: idOf(v),
+                venueName: v.name,
+                venueAddress: (v as any).address,
+              })
+            }
+          />
+        </View>
+      ))}
     </View>
   );
 
@@ -566,14 +501,28 @@ export default function HomeScreen() {
         data={postItems}
         keyExtractor={(p, i) => idOf(p) ?? String(i)}
         contentContainerStyle={{ paddingBottom: insets.bottom + 120 }}
-        ListHeaderComponent={header}
+        ListHeaderComponent={
+          <>
+            {Hero}
+            {header}
+          </>
+        }
         renderItem={({ item }) => (
           <View style={{ paddingHorizontal: 16 }}>
             <PostCard
               post={item}
               onPressCourt={() => {
                 const cid = String((item as any).courtId ?? "");
-                navigation.navigate("Court", { courtId: cid, courtName: "Sân" });
+                const c = courtsQ.data?.find((x: any) => idOf(x) === cid);
+                const vName = venuesQ.data?.find((v: any) => idOf(v) === venueId)?.name ?? undefined;
+                const cover = c?.coverUrl ?? item?.images?.[0]?.url ?? null;
+
+                navigation.navigate("Court", {
+                  courtId: cid,
+                  courtName: c?.name ?? "Sân",
+                  venueName: vName,
+                  coverUrl: cover,
+                });
               }}
               onPressComments={() => navigation.navigate("Comments", { postId: idOf(item) })}
             />
@@ -581,8 +530,12 @@ export default function HomeScreen() {
         )}
         onEndReachedThreshold={0.4}
         onEndReached={() => posts.fetchNext()}
-        ListFooterComponent={
-          posts.isFetchingMore ? <ActivityIndicator style={{ marginVertical: 12 }} /> : null
+        ListFooterComponent={footer}  // <-- ĐẶT Ở CUỐI
+        ListFooterComponentStyle={{ paddingBottom: insets.bottom + 24 }}
+        ListEmptyComponent={
+          <Text style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+            Chưa có bài đăng nào cho sân này
+          </Text>
         }
         viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={onViewableItemsChangedReal}

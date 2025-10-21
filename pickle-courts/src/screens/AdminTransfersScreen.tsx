@@ -1,6 +1,5 @@
-// pickle-courts/src/screens/AdminTransfersScreen.tsx
 import React, { useMemo, useState } from "react";
-import { View, Image, Alert, Linking, ScrollView } from "react-native";
+import { View, Image, Alert } from "react-native";
 import {
   Button,
   Text,
@@ -11,49 +10,54 @@ import {
   Chip,
   Badge,
 } from "react-native-paper";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAdminTransfers, useVerifyTransfer } from "../hooks/useAdminTransfers";
 
-/* ---------------- UI helpers (UI only) ---------------- */
+/* ===== helpers ===== */
+const statusText = (st?: string) => {
+  switch (st) {
+    case "awaiting_transfer": return "Chờ chuyển khoản";
+    case "verifying":        return "Đang chờ duyệt";
+    case "paid":             return "Đã thanh toán";
+    case "expired":          return "Hết hạn";
+    case "failed":           return "Thất bại";
+    case "pending":          return "Chờ xử lý";
+    default:                 return "Không xác định";
+  }
+};
 const statusColor = (st?: string) => {
   switch (st) {
-    case "awaiting_transfer":
-      return "#f59e0b"; // amber
-    case "verifying":
-      return "#06b6d4"; // cyan
-    case "paid":
-      return "#16a34a"; // green
-    case "expired":
-      return "#ef4444"; // red
-    default:
-      return "#6b7280"; // gray
+    case "awaiting_transfer": return "#f59e0b";
+    case "verifying":         return "#06b6d4";
+    case "paid":              return "#16a34a";
+    case "expired":           return "#ef4444";
+    case "failed":            return "#a855f7";
+    default:                  return "#6b7280";
   }
 };
 
 const ProofImage = ({ url }: { url?: string }) => {
   if (!url) return null;
   const isHttp = /^https?:\/\//i.test(url);
-  if (!isHttp) return <Text style={{ color: "#6B7280", marginTop: 6 }}>Proof: {url}</Text>;
-  return (
-    <Image
-      source={{ uri: url }}
-      style={{
-        width: "100%",
-        height: 210,
-        resizeMode: "cover",
-        marginTop: 10,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: "#E5E7EB",
-      }}
-    />
-  );
+  if (isHttp) {
+    return (
+      <Image
+        source={{ uri: url }}
+        style={{
+          width: "100%", height: 210, resizeMode: "cover",
+          marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: "#E5E7EB",
+        }}
+      />
+    );
+  }
+  return <Text style={{ color: "#6B7280", marginTop: 6 }}>Minh chứng: {url}</Text>;
 };
 
-/* ---------------- Screen ---------------- */
+/* ===== screen ===== */
 export default function AdminTransfersScreen() {
+  const insets = useSafeAreaInsets();
   const listQ = useAdminTransfers();
   const verifyM = useVerifyTransfer();
-
   const [bankRefMap, setBankRefMap] = useState<Record<string, string>>({});
 
   const onApprove = (id: string) => {
@@ -66,7 +70,6 @@ export default function AdminTransfersScreen() {
       }
     );
   };
-
   const onReject = (id: string) => {
     verifyM.mutate(
       { bookingId: id, success: false },
@@ -86,7 +89,6 @@ export default function AdminTransfersScreen() {
         </View>
       );
     }
-
     if (listQ.error) {
       return <Text style={{ color: "#EF4444", padding: 16 }}>Không tải được danh sách</Text>;
     }
@@ -95,9 +97,7 @@ export default function AdminTransfersScreen() {
     if (!items.length) {
       return (
         <Card style={{ borderRadius: 16, backgroundColor: "#fff", borderWidth: 1, borderColor: "#E5E7EB" }}>
-          <Card.Content>
-            <Text>Chưa có giao dịch cần duyệt.</Text>
-          </Card.Content>
+          <Card.Content><Text>Chưa có giao dịch cần duyệt.</Text></Card.Content>
         </Card>
       );
     }
@@ -107,22 +107,17 @@ export default function AdminTransfersScreen() {
         {items.map((b) => {
           const id = b._id;
           const money = Intl.NumberFormat("vi-VN").format(b.price);
-          const memo = b.transfer?.memoCode ? `Memo: ${b.transfer.memoCode}` : undefined;
+          const memo = b.transfer?.memoCode ? `Mã giao dịch: ${b.transfer.memoCode}` : undefined;
           const bankRef = bankRefMap[id] ?? "";
           const color = statusColor(b.paymentStatus);
 
           return (
             <Card
               key={id}
-              style={{
-                backgroundColor: "#fff",
-                borderRadius: 16,
-                borderWidth: 1,
-                borderColor: "#E5E7EB",
-              }}
+              style={{ backgroundColor: "#fff", borderRadius: 16, borderWidth: 1, borderColor: "#E5E7EB" }}
             >
               <Card.Title
-                title={`${b.courtName ?? b.courtId}`}
+                title={b.courtName ?? "Sân"}
                 subtitle={`${b.date}  ${b.startAt} – ${b.endAt}`}
                 titleStyle={{ fontWeight: "700" }}
                 right={() => (
@@ -137,7 +132,7 @@ export default function AdminTransfersScreen() {
                     }}
                     textStyle={{ color, fontWeight: "600" }}
                   >
-                    {b.paymentStatus}
+                    {statusText(b.paymentStatus)}
                   </Chip>
                 )}
               />
@@ -153,53 +148,24 @@ export default function AdminTransfersScreen() {
                   Số tiền: <Text style={{ fontWeight: "700" }}>{money} đ</Text>
                 </Text>
 
-                {/* Ẩn UserId khỏi dòng chính, nếu cần xem thì hiển thị nhẹ nhàng */}
-                {!!b.userId && (
-                  <Text style={{ color: "#9CA3AF" }} selectable>
-                    User ID: {b.userId}
-                  </Text>
-                )}
-
                 {!!b.note && <Text style={{ color: "#6B7280" }}>Ghi chú: {b.note}</Text>}
-
                 <ProofImage url={b.transfer?.proofUrl} />
 
                 <TextInput
                   mode="outlined"
-                  label="Bank reference (tuỳ chọn)"
+                  label="Mã tham chiếu ngân hàng (tuỳ chọn)"
                   value={bankRef}
                   onChangeText={(t) => setBankRefMap((m) => ({ ...m, [id]: t }))}
                   style={{ marginTop: 10, backgroundColor: "#fff" }}
                 />
 
-                <View style={{ flexDirection: "row", marginTop: 12, gap: 10, flexWrap: "wrap" }}>
-                  <Button
-                    mode="contained"
-                    onPress={() => onApprove(id)}
-                    loading={verifyM.isPending}
-                    style={{ borderRadius: 12 }}
-                  >
+                <View style={{ flexDirection: "row", marginTop: 12, gap: 10 }}>
+                  <Button mode="contained" onPress={() => onApprove(id)} loading={verifyM.isPending} style={{ borderRadius: 12 }}>
                     Xác nhận
                   </Button>
-                  <Button
-                    mode="outlined"
-                    onPress={() => onReject(id)}
-                    disabled={verifyM.isPending}
-                    style={{ borderRadius: 12, borderColor: "#D1D5DB" }}
-                  >
+                  <Button mode="outlined" onPress={() => onReject(id)} disabled={verifyM.isPending} style={{ borderRadius: 12, borderColor: "#D1D5DB" }}>
                     Từ chối
                   </Button>
-                  {b.transfer?.memoCode && (
-                    <Button
-                      mode="text"
-                      onPress={() => {
-                        const q = encodeURIComponent(b.transfer!.memoCode!);
-                        Linking.openURL(`https://www.google.com/search?q=${q}`);
-                      }}
-                    >
-                      Tra cứu
-                    </Button>
-                  )}
                 </View>
               </Card.Content>
             </Card>
@@ -210,12 +176,15 @@ export default function AdminTransfersScreen() {
   }, [listQ.data, listQ.isLoading, listQ.error, bankRefMap, verifyM.isPending]);
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: "#F9FAFB" }} contentContainerStyle={{ padding: 16, gap: 12 }}>
-      <View style={{ marginBottom: 4 }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: "#F9FAFB", paddingTop: insets.top }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 }}>
         <Text style={{ fontSize: 18, fontWeight: "800", color: "#111827" }}>Xác nhận chuyển khoản</Text>
         <Text style={{ color: "#6B7280", marginTop: 2 }}>Duyệt các giao dịch người dùng đã gửi minh chứng.</Text>
       </View>
-      {content}
-    </ScrollView>
+
+      <View style={{ flex: 1, paddingHorizontal: 16, paddingBottom: 16 }}>
+        {content}
+      </View>
+    </SafeAreaView>
   );
 }

@@ -1,8 +1,7 @@
-// pickle-courts/src/screens/CommentsScreen.tsx
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { View, FlatList, Keyboard, RefreshControl } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Text, TextInput, Button, IconButton, ActivityIndicator } from "react-native-paper";
+import { Text, TextInput, IconButton, ActivityIndicator } from "react-native-paper";
 import { addComment, listComments } from "../api/posts";
 import type { Comment } from "../types/post";
 
@@ -13,6 +12,9 @@ const ACCENT = {
   border: "#C4B5FD",
   textDim: "#6B7280",
 };
+
+// 👉 chỉnh tuỳ theo tab bar của bạn
+const TAB_BAR_H = 64;
 
 export default function CommentsScreen({ route }: any) {
   const { postId } = route.params as { postId: string };
@@ -39,17 +41,20 @@ export default function CommentsScreen({ route }: any) {
     };
   }, []);
 
-  const load = useCallback(async (next?: boolean) => {
-    if (loading) return;
-    setLoading(true);
-    try {
-      const res = await listComments(postId, next ? cursor ?? undefined : undefined);
-      setItems((old) => (next ? [...old, ...res.items] : res.items));
-      setCursor(res.nextCursor);
-    } finally {
-      setLoading(false);
-    }
-  }, [loading, postId, cursor]);
+  const load = useCallback(
+    async (next?: boolean) => {
+      if (loading) return;
+      setLoading(true);
+      try {
+        const res = await listComments(postId, next ? cursor ?? undefined : undefined);
+        setItems((old) => (next ? [...old, ...res.items] : res.items));
+        setCursor(res.nextCursor);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loading, postId, cursor]
+  );
 
   useEffect(() => { load(false); }, [postId]); // initial
 
@@ -71,8 +76,15 @@ export default function CommentsScreen({ route }: any) {
     }
   }, [postId, text, sending]);
 
-  const bottomPad = useMemo(
-    () => (kbHeight > 0 ? kbHeight : 0) + insets.bottom + 8,
+  // ======= Safe paddings =======
+  const composerBottom = useMemo(
+    () => (kbHeight > 0 ? kbHeight + 8 : TAB_BAR_H + insets.bottom + 8),
+    [kbHeight, insets.bottom]
+  );
+
+  const listBottomPad = useMemo(
+    // chừa thêm ~ composer height (~56) + tab bar
+    () => (kbHeight > 0 ? kbHeight + 120 : TAB_BAR_H + insets.bottom + 140),
     [kbHeight, insets.bottom]
   );
 
@@ -82,13 +94,11 @@ export default function CommentsScreen({ route }: any) {
         data={items}
         keyExtractor={(c) => c.id}
         keyboardShouldPersistTaps="handled"
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         contentContainerStyle={{
           paddingHorizontal: 16,
-          paddingTop: 8,
-          paddingBottom: insets.bottom + 100,
+          paddingTop: insets.top + 8,     // ✅ chừa safe-area top để không dính status bar
+          paddingBottom: listBottomPad,   // ✅ chừa đủ chỗ cho composer + tab bar
         }}
         renderItem={({ item }) => (
           <View
@@ -140,7 +150,7 @@ export default function CommentsScreen({ route }: any) {
           position: "absolute",
           left: 12,
           right: 12,
-          bottom: bottomPad,
+          bottom: composerBottom,  // ✅ không đè tab bar / navigation bar
           padding: 8,
           backgroundColor: "#fff",
           borderRadius: 16,
@@ -152,6 +162,7 @@ export default function CommentsScreen({ route }: any) {
           borderWidth: 1,
           borderColor: "#EEE",
         }}
+        pointerEvents="box-none"
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <TextInput

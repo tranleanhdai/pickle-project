@@ -1,11 +1,9 @@
-// pickle-courts/src/screens/CourtScreen.tsx
 import React, { useMemo, useState, useCallback } from "react";
 import { View, FlatList, RefreshControl, Alert, Image } from "react-native";
 import {
   Text,
   ActivityIndicator,
   Card,
-  Button,
   Badge,
   Appbar,
   Divider,
@@ -29,10 +27,17 @@ import { useTransferInitiate } from "../hooks/useTransferInitiate";
 import { ensureAuth } from "../utils/authGuard";
 import { useMe } from "../hooks/useMe";
 
+type RouteParams = {
+  courtId: string;
+  courtName: string;
+  coverUrl?: string | null;
+  venueName?: string | null;
+};
+
 export default function CourtScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const { courtId, courtName } = route.params as { courtId: string; courtName: string };
+  const { courtId, courtName, coverUrl, venueName } = route.params as RouteParams;
 
   const today = dayjs().format("YYYY-MM-DD");
   const tomorrow = dayjs().add(1, "day").format("YYYY-MM-DD");
@@ -113,7 +118,7 @@ export default function CourtScreen() {
     setOpenNote(true);
   };
 
-  // ---------- UI pieces (UI-only, no logic change) ----------
+  // ---------- UI pieces ----------
   const StickyHeader = useMemo(
     () => (
       <Appbar.Header elevated mode="center-aligned">
@@ -128,7 +133,7 @@ export default function CourtScreen() {
     <Card mode="elevated" style={{ marginHorizontal: 16, marginTop: 12 }}>
       <Card.Content style={{ flexDirection: "row", gap: 16 }}>
         <Image
-          source={require("../../assets/pb6.jpg")} // placeholder tuỳ ý
+          source={coverUrl ? { uri: coverUrl } : require("../../assets/pickleball-court.jpg")}
           style={{ width: 80, height: 80, borderRadius: 12 }}
           resizeMode="cover"
         />
@@ -136,9 +141,11 @@ export default function CourtScreen() {
           <Text variant="titleMedium" style={{ marginBottom: 4 }}>
             {courtName}
           </Text>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
-            <Text style={{ opacity: 0.7 }}>Sân Pickleball Thảo Điền</Text>
-          </View>
+          {!!venueName && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 6 }}>
+              <Text style={{ opacity: 0.7 }}>{venueName}</Text>
+            </View>
+          )}
           <Badge style={{ alignSelf: "flex-start" }} size={22}>
             Pickleball
           </Badge>
@@ -155,7 +162,6 @@ export default function CourtScreen() {
         left={(props) => <Appbar.Action {...props} icon="calendar" />}
       />
       <Card.Content style={{ paddingBottom: 12 }}>
-        {/* Giữ CourtHeader để đổi ngày (không đổi logic) */}
         <CourtHeader
           courtName={courtName}
           date={date}
@@ -220,7 +226,6 @@ export default function CourtScreen() {
         data={slots}
         keyExtractor={(s, i) => (s as any).id ?? `${s.courtId}|${s.date}|${s.startAt}-${s.endAt}-${i}`}
         refreshControl={<RefreshControl refreshing={isLoading} onRefresh={() => refetch()} />}
-        // Header: info card + date picker + section header (UI-only)
         ListHeaderComponent={
           <>
             {CourtInfoCard}
@@ -244,7 +249,6 @@ export default function CourtScreen() {
                 <SlotCard
                   slot={{ ...(item as any), isMine }}
                   meId={meId}
-                  // khóa nút đặt nếu slot đang bị block bởi người khác
                   disabled={
                     (item as any).status === "blocked" &&
                     (item as any).booking?.userId &&
@@ -271,7 +275,7 @@ export default function CourtScreen() {
         }}
       />
 
-      {/* Note dialog (giữ nguyên logic) */}
+      {/* Note dialog */}
       <NoteDialog
         visible={openNote}
         mode={mode}
@@ -283,7 +287,6 @@ export default function CourtScreen() {
           if (!(await requireAuth())) return;
 
           if (mode === "book" && pendingSlot) {
-            // chọn phương thức thanh toán sau khi nhập ghi chú
             setPmValue("pay_later");
             setPmVisible(true);
           }
@@ -316,31 +319,21 @@ export default function CourtScreen() {
 
           try {
             if (pmValue === "pay_later") {
-              // ===================== CÁCH B =====================
-              // 👉 Đi qua BookingScreen để xác nhận, KHÔNG tạo booking ở đây
               const n = (draftNote || "").trim();
-
               navigation.navigate("BookingScreen", {
-                // Nếu có venue info trong params của CourtScreen, truyền tiếp (không bắt buộc)
                 venueId: (route as any)?.params?.venueId,
                 venueName: (route as any)?.params?.venueName,
-
-                // Court & thời gian/giá từ slot đang chọn
                 courtId,
                 courtName,
                 date,
                 startAt: pendingSlot.startAt,
                 endAt: pendingSlot.endAt,
                 price: pendingSlot.price,
-
-                // Ghi chú (nếu có)
                 note: n,
               });
-
               return;
             }
 
-            // ========= prepay_transfer (giữ nguyên) =========
             if (pendingSlot.price == null) {
               Alert.alert("Lỗi", "Không xác định được giá của khung giờ.");
               return;

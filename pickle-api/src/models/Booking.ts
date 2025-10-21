@@ -59,6 +59,9 @@ const bookingSchema = new Schema(
       index: true,
     },
 
+    // NEW: mapping tới Timeslot (optional để không vỡ dữ liệu cũ)
+    timeslotId: { type: Types.ObjectId, ref: "Timeslot", default: null, index: true },
+
     // THÊM: để routes/booking.ts có thể lưu nếu cung cấp
     paymentId: { type: String, index: true, sparse: true },
 
@@ -74,15 +77,7 @@ const bookingSchema = new Schema(
   { timestamps: true }
 );
 
-/**
- * ⚠️ BỎ UNIQUE CỨNG:
- *   bookingSchema.index({ courtId, date, startAt, endAt }, { unique: true })
- * Vì nó khiến prepay/hold & pay_later “đè nhau”.
- * Thay bằng index hỗ trợ truy vấn blocker đúng luật.
- */
-
-// Hỗ trợ tìm blocker nhanh theo luật:
-// (courtId,date,startAt,endAt,paymentMethod,paymentStatus,holdUntil)
+// Index hỗ trợ truy vấn blocker đúng luật
 bookingSchema.index({
   courtId: 1,
   date: 1,
@@ -93,12 +88,11 @@ bookingSchema.index({
   holdUntil: 1,
 });
 
-// Một số index phụ trợ sẵn có
+// Phụ trợ
 bookingSchema.index({ userId: 1, date: -1 });
 bookingSchema.index({ courtId: 1, date: -1 });
 bookingSchema.index({ paymentStatus: 1, date: -1 });
 
-// Helper nhỏ cho audit
 bookingSchema.methods.addAudit = function (
   action: string,
   by?: Types.ObjectId,
@@ -107,7 +101,6 @@ bookingSchema.methods.addAudit = function (
   this.audit.push({ at: new Date(), action, by, meta });
 };
 
-// Helper lấy theo id, ném lỗi chuẩn
 bookingSchema.statics.getByIdOrThrow = async function (id: string | Types.ObjectId) {
   const _id = typeof id === "string" ? new Types.ObjectId(id) : id;
   const doc = await this.findById(_id);
@@ -115,7 +108,6 @@ bookingSchema.statics.getByIdOrThrow = async function (id: string | Types.Object
   return doc;
 };
 
-// toJSON đẹp
 bookingSchema.set("toJSON", {
   virtuals: true,
   versionKey: false,

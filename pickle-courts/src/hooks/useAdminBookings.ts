@@ -4,7 +4,8 @@ import { api } from "../api/client";
 export type AdminBooking = {
   _id: string;
   courtId: string;
-  courtName?: string;        // 👈 thêm field mới (optional)
+  courtName?: string;   // ✅ đã có
+  venueName?: string;   // ✅ thêm dòng này
   date: string;
   startAt: string;
   endAt: string;

@@ -1,8 +1,8 @@
 /* eslint-disable no-console */
 import "dotenv/config";
 import mongoose from "mongoose";
-import bcrypt from "bcryptjs";
-import { User } from "../src/models/User";   // đường dẫn từ scripts -> src/models
+import bcrypt from "bcryptjs"; // hoặc: import * as bcrypt from "bcryptjs";
+import { User } from "../models/User";  // đường dẫn từ scripts -> src/models
 
 async function main() {
   console.log("▶ Starting seed...");
@@ -26,8 +26,8 @@ async function main() {
     console.log("✅ Seeded admin: admin/admin123");
     created++;
   } else {
-    console.log("ℹ️ Admin existed:", admin._id.toString());
-  }
+  console.log("ℹ️ Admin existed:", admin.id); // ✅ không còn lỗi unknown
+}
 
   const demo = await User.findOne({ username: "demo" });
   if (!demo) {
@@ -39,8 +39,8 @@ async function main() {
     console.log("✅ Seeded user: demo/123");
     created++;
   } else {
-    console.log("ℹ️ Demo existed:", demo._id.toString());
-  }
+  console.log("ℹ️ Demo existed:", demo.id); // ✅
+}
 
   await mongoose.disconnect();
   console.log("✔ Done. Created:", created);

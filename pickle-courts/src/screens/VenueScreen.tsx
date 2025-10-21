@@ -39,7 +39,6 @@ function hashStr(s: string) {
   return h >>> 0;
 }
 function assetUri(mod: any) {
-  // convert require(...) to usable uri for <Image source={{uri}}>
   return Image.resolveAssetSource(mod).uri;
 }
 
@@ -50,8 +49,8 @@ function getVenueCover({ coverUrl, venueId }: { coverUrl?: string | null; venueI
 }
 
 function getCourtCover(court: any, index: number) {
-  if (court?.coverUrl) return court.coverUrl; // Admin set cover
-  const firstPostImg = court?.posts?.[0]?.images?.[0]?.url; // if you attach post preview in API
+  if (court?.coverUrl) return court.coverUrl;
+  const firstPostImg = court?.posts?.[0]?.images?.[0]?.url;
   if (firstPostImg) return firstPostImg;
   const key = String(court?.id ?? index);
   const i = hashStr(key) % LOCAL_COURT_COVERS.length;
@@ -209,6 +208,7 @@ export default function VenueScreen() {
                       courtId: item.id,
                       courtName: item.name,
                       coverUrl: image,
+                      venueName, // thêm tên địa điểm
                     })
                   }
                 >
@@ -267,6 +267,7 @@ export default function VenueScreen() {
                               courtId: item.id,
                               courtName: item.name,
                               coverUrl: image,
+                              venueName, // thêm tên địa điểm
                             })
                           }
                           disabled={status === "booked"}

@@ -1,22 +1,100 @@
 // src/routes/booking.ts
 import { Router } from "express";
 import { Types } from "mongoose";
-import { auth, AuthRequest } from "../middleware/auth";
+import { auth, AuthRequest, requireAdmin } from "../middleware/auth";
 import { Timeslot } from "../models/Timeslot";
 import { Booking } from "../models/Booking";
 import { Court } from "../models/Court";
+import { Venue } from "../models/Venue";
 
 const router = Router();
 
 /**
+ * GET / (ADMIN)
+ * Query:
+ *   - date?: YYYY-MM-DD
+ *   - courtId?: string
+ *   - paymentStatus?: pending|awaiting_transfer|verifying|paid|failed|expired
+ *   - paymentMethod?: prepay_transfer|pay_later
+ * Trả thêm: courtName, venueName
+ */
+router.get("/", auth, requireAdmin, async (req: AuthRequest, res) => {
+  try {
+    const { date, courtId, paymentStatus, paymentMethod } = req.query as {
+      date?: string;
+      courtId?: string;
+      paymentStatus?: string;
+      paymentMethod?: "prepay_transfer" | "pay_later";
+    };
+
+    const cond: any = {};
+    if (date) cond.date = date;
+    if (courtId) cond.courtId = courtId;
+    if (paymentStatus) cond.paymentStatus = paymentStatus;
+    if (paymentMethod) cond.paymentMethod = paymentMethod;
+
+    const docs = await Booking.find(cond)
+      .sort({ createdAt: -1 })
+      .select(
+        "_id courtId date startAt endAt price userId note paymentMethod paymentStatus transfer createdAt"
+      )
+      .lean();
+
+    if (!docs.length) return res.json(docs);
+
+    // ---- Enrich courtName & venueName ----
+    const courtIds: string[] = Array.from(
+      new Set((docs as any[]).map((d: any) => String(d.courtId)).filter(Boolean))
+    );
+
+    // court._id là ObjectId → convert an toàn
+    const courtObjectIds = courtIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const courts = await Court.find({ _id: { $in: courtObjectIds } })
+      .select("_id name venueId")
+      .lean();
+
+    const venueIds: string[] = Array.from(
+      new Set((courts as any[]).map((c: any) => String(c.venueId)).filter(Boolean))
+    );
+
+    const venueObjectIds = venueIds
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    const venues = await Venue.find({ _id: { $in: venueObjectIds } })
+      .select("_id name")
+      .lean();
+
+    const courtMap = new Map<string, any>(
+      (courts as any[]).map((c: any) => [String(c._id), c])
+    );
+    const venueMap = new Map<string, any>(
+      (venues as any[]).map((v: any) => [String(v._id), v])
+    );
+
+    const enriched = (docs as any[]).map((d: any) => {
+      const c = courtMap.get(String(d.courtId));
+      const v = c ? venueMap.get(String(c?.venueId)) : undefined;
+      return {
+        ...d,
+        courtName: c?.name,
+        venueName: v?.name,
+      };
+    });
+
+    return res.json(enriched);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
  * POST /
- * - pay_later:
- *    tạo booking giữ chỗ (pending, hold 15')
- * - prepay_transfer:
- *    - KHÔNG có paymentId  -> awaiting_transfer + hold 15'
- *    - CÓ paymentId        -> paid (idempotent nếu submit lại)
- *
- * Luật chặn (blocker):
+ * Luật chặn:
  *  - pay_later:  paid  OR (pending  && holdUntil > now)
  *  - prepay_tr:  paid  OR ((awaiting_transfer|verifying) && holdUntil > now)
  */
@@ -34,8 +112,8 @@ router.post("/", auth, async (req: AuthRequest, res) => {
     } = req.body ?? {};
 
     const idempotencyKey =
-      (req.header("Idempotency-Key") || req.header("x-idempotency-key") || "")
-        .trim() || undefined;
+      (req.header("Idempotency-Key") || req.header("x-idempotency-key") || "").trim() ||
+      undefined;
 
     if (typeof price === "string") price = Number(price);
     if (!courtId || !date || !startAt || !endAt || typeof price !== "number") {
@@ -47,31 +125,40 @@ router.post("/", auth, async (req: AuthRequest, res) => {
       });
     }
 
-    // Idempotency: nếu đã có record với cùng key, trả lại luôn
+    // Idempotency
     if (idempotencyKey) {
-      const existed = await Booking.findOne({
-        idempotencyKey,
-        userId: req.user!.id,
-      }).lean();
+      const existed = await Booking.findOne({ idempotencyKey, userId: req.user!.id }).lean();
       if (existed) return res.status(200).json(existed);
     }
 
     // 1) slot phải tồn tại
-    const slot = await Timeslot.findOne({ courtId, date, startAt, endAt });
+    const slot = await Timeslot.findOne({ courtId, date, startAt, endAt }).lean();
     if (!slot) return res.status(404).json({ error: "Timeslot not found" });
 
-    // 2) kiểm tra "blocker" theo đúng luật khóa
+    // 2) kiểm tra "blocker" — ưu tiên khớp theo timeslotId, fallback theo start/end
     const now = new Date();
+    const stateOrs = [
+      { paymentMethod: "pay_later", paymentStatus: "paid" },
+      { paymentMethod: "pay_later", paymentStatus: "pending", holdUntil: { $gt: now } },
+      { paymentMethod: "prepay_transfer", paymentStatus: "paid" },
+      {
+        paymentMethod: "prepay_transfer",
+        paymentStatus: { $in: ["awaiting_transfer", "verifying"] },
+        holdUntil: { $gt: now },
+      },
+    ];
+
     const blocker = await Booking.findOne({
       courtId,
       date,
-      startAt,
-      endAt,
-      $or: [
-        { paymentMethod: "pay_later",       paymentStatus: "paid" },
-        { paymentMethod: "pay_later",       paymentStatus: "pending",            holdUntil: { $gt: now } },
-        { paymentMethod: "prepay_transfer", paymentStatus: "paid" },
-        { paymentMethod: "prepay_transfer", paymentStatus: { $in: ["awaiting_transfer", "verifying"] }, holdUntil: { $gt: now } },
+      $and: [
+        {
+          $or: [
+            { timeslotId: slot._id }, // booking mới
+            { $and: [{ startAt }, { endAt }] }, // booking cũ chưa có timeslotId
+          ],
+        },
+        { $or: stateOrs as any },
       ],
     }).lean();
 
@@ -98,7 +185,6 @@ router.post("/", auth, async (req: AuthRequest, res) => {
         transfer = { amountExpected: Number(price) };
       }
     } else {
-      // pay_later
       paymentStatus = "pending";
       holdUntil = new Date(Date.now() + 15 * 60 * 1000);
     }
@@ -118,6 +204,7 @@ router.post("/", auth, async (req: AuthRequest, res) => {
       transfer,
       paymentId: storedPaymentId,
       idempotencyKey,
+      timeslotId: slot._id, // NEW: gắn timeslotId
       audit: [{ action: "create", at: new Date(), by: user.id as any }],
     });
 
@@ -131,78 +218,7 @@ router.post("/", auth, async (req: AuthRequest, res) => {
   }
 });
 
-/**
- * GET /:id
- * - Lấy chi tiết 1 booking (user chỉ xem được booking của mình; admin xem tất cả)
- */
-router.get("/:id", auth, async (req: AuthRequest, res) => {
-  const id = String(req.params.id || "").trim();
-
-  if (!Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ error: "Invalid id" });
-  }
-
-  const bk = await Booking.findById(id).lean();
-  if (!bk) return res.status(404).json({ error: "Booking not found" });
-
-  const user = req.user!;
-  if (user.role !== "admin" && String(bk.userId) !== String(user.id)) {
-    return res.status(403).json({ error: "Not your booking" });
-  }
-
-  return res.json(bk);
-});
-
-/**
- * GET /
- * - Admin: thấy tất cả
- * - User: chỉ thấy của mình
- * - Filter: ?courtId=&date=&paymentStatus=
- */
-router.get("/", auth, async (req, res) => {
-  try {
-    const user = (req as any).user as { id: string; role: string };
-    const { courtId, date, paymentStatus } = req.query as {
-      courtId?: string;
-      date?: string;
-      paymentStatus?: string;
-    };
-
-    const base: any = {};
-    if (courtId) base.courtId = courtId;
-    if (date) base.date = date;
-    if (paymentStatus) base.paymentStatus = paymentStatus;
-
-    const filter = user.role === "admin" ? base : { ...base, userId: user.id };
-
-    const list = await Booking.find(filter).sort({ date: 1, startAt: 1 }).lean();
-
-    const courtIds = Array.from(new Set(list.map((b: any) => String(b.courtId))));
-    const courts = await Court.find({ _id: { $in: courtIds } })
-      .select("_id name")
-      .lean();
-
-    const nameMap = new Map<string, string>(
-      courts.map((c: any) => [String(c._id), c.name])
-    );
-
-    const withNames = list.map((b: any) => ({
-      ...b,
-      courtName: nameMap.get(String(b.courtId)) || undefined,
-    }));
-
-    res.json(withNames);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-/**
- * DELETE /:id
- * - Chính chủ hoặc admin mới được hủy
- */
-// DELETE /:id
+/** DELETE /:id — chính chủ hoặc admin */
 router.delete("/:id", auth, async (req: AuthRequest, res) => {
   const id = String(req.params.id || "").trim();
   const user = req.user!;
@@ -214,27 +230,21 @@ router.delete("/:id", auth, async (req: AuthRequest, res) => {
   const bk = await Booking.findById(id).lean();
   if (!bk) return res.status(404).json({ error: "Booking not found" });
 
-  // Không phải của mình và cũng không phải admin
   if (user.role !== "admin" && String(bk.userId) !== String(user.id)) {
     return res.status(403).json({ error: "Not your booking" });
   }
 
-  // ⚠️ User thường KHÔNG được hủy nếu booking đã thanh toán
   if (user.role !== "admin" && bk.paymentStatus === "paid") {
     return res
       .status(403)
       .json({ error: "Booking đã thanh toán, bạn không thể tự hủy. Vui lòng liên hệ admin." });
   }
 
-  // (Optional) nếu muốn chặn cả admin khi paid thì đổi điều kiện phía trên.
   await Booking.deleteOne({ _id: id });
   return res.json({ ok: true });
 });
 
-/**
- * PATCH /:id
- * - Cập nhật NOTE (chính chủ hoặc admin)
- */
+/** PATCH /:id — cập nhật NOTE (chính chủ hoặc admin) */
 router.patch("/:id", auth, async (req: AuthRequest, res) => {
   const id = String(req.params.id || "").trim();
   const { note } = req.body ?? {};

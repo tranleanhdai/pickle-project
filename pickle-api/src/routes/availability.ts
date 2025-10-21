@@ -7,13 +7,11 @@ import { optionalAuth } from "../middleware/optionalAuth";
 
 const router = Router();
 
-/** (tuỳ chọn) Log để nhìn request thực tế */
 router.use((req, _res, next) => {
   console.log("[availability]", req.method, req.originalUrl, req.query);
   next();
 });
 
-/** ==== Kiểu dữ liệu trả về ==== */
 type SlotAvailable = {
   courtId: string;
   date: string;
@@ -34,25 +32,20 @@ type SlotBlocked = {
     id: string;
     userId: string;
     paymentMethod: "pay_later" | "prepay_transfer";
-    paymentStatus:
-      | "pending"
-      | "awaiting_transfer"
-      | "verifying"
-      | "paid"
-      | "failed"
-      | "expired";
+    paymentStatus: "pending" | "awaiting_transfer" | "verifying" | "paid" | "failed" | "expired";
     holdUntil?: Date | null;
     note?: string;
+    // NEW: expose timeslotId cho FE nếu cần
+    timeslotId?: string | null;
   };
   bookedByMe?: boolean;
 };
 
 type SlotResponse = SlotAvailable | SlotBlocked;
 
-/** Tạo sẵn timeslots mặc định (07→22h) nếu chưa có */
 async function ensureTimeslots(courtId: string, date: string) {
   const startHour = 7;
-  const endHour = 22; // 21-22 là slot cuối
+  const endHour = 22;
   const price = 100_000;
 
   const ops: any[] = [];
@@ -70,10 +63,6 @@ async function ensureTimeslots(courtId: string, date: string) {
   if (ops.length) await Timeslot.bulkWrite(ops, { ordered: false });
 }
 
-/**
- * GET /api/availability?courtId=&date=YYYY-MM-DD
- * (đã mount ở /api/availability trong index.ts → path ở đây là "/")
- */
 router.get("/", optionalAuth, async (req: Request, res: Response) => {
   try {
     const { courtId, date } = req.query as { courtId?: string; date?: string };
@@ -92,54 +81,56 @@ router.get("/", optionalAuth, async (req: Request, res: Response) => {
 
     const now = new Date();
 
-    const slots = await Timeslot.find({ courtId, date })
-      .sort({ startAt: 1 })
-      .lean();
+    const slots = await Timeslot.find({ courtId, date }).sort({ startAt: 1 }).lean();
 
     const bookings = await Booking.find({
       courtId,
       date,
       $or: [
-        { paymentMethod: "pay_later",       paymentStatus: "paid" },
-        { paymentMethod: "pay_later",       paymentStatus: "pending",            holdUntil: { $gt: now } },
+        { paymentMethod: "pay_later", paymentStatus: "paid" },
+        { paymentMethod: "pay_later", paymentStatus: "pending", holdUntil: { $gt: now } },
         { paymentMethod: "prepay_transfer", paymentStatus: "paid" },
-        { paymentMethod: "prepay_transfer", paymentStatus: { $in: ["awaiting_transfer", "verifying"] }, holdUntil: { $gt: now } },
+        {
+          paymentMethod: "prepay_transfer",
+          paymentStatus: { $in: ["awaiting_transfer", "verifying"] },
+          holdUntil: { $gt: now },
+        },
       ],
     })
-      .select("_id startAt endAt userId paymentMethod paymentStatus holdUntil note")
+      .select("_id timeslotId startAt endAt userId paymentMethod paymentStatus holdUntil note")
       .lean();
 
     type BookingLite = {
       _id: any;
+      timeslotId?: any | null;
       startAt: string;
       endAt: string;
       userId: any;
       paymentMethod: "pay_later" | "prepay_transfer";
-      paymentStatus:
-        | "pending"
-        | "awaiting_transfer"
-        | "verifying"
-        | "paid"
-        | "failed"
-        | "expired";
+      paymentStatus: "pending" | "awaiting_transfer" | "verifying" | "paid" | "failed" | "expired";
       holdUntil?: Date | null;
       note?: string;
     };
 
-    const myId: string | null = (req as any)?.user?.id
-      ? String((req as any).user.id)
-      : null;
+    const myId: string | null = (req as any)?.user?.id ? String((req as any).user.id) : null;
 
-    const bookedMap = new Map<string, BookingLite>();
+    // Map theo timeslotId nếu có, nếu không thì theo "start|end" (booking cũ)
+    const bookedBySlotId = new Map<string, BookingLite>();
+    const bookedByTimeKey = new Map<string, BookingLite>();
     for (const b of bookings as BookingLite[]) {
-      bookedMap.set(`${b.startAt}|${b.endAt}`, b);
+      if (b.timeslotId) {
+        bookedBySlotId.set(String(b.timeslotId), b);
+      } else {
+        bookedByTimeKey.set(`${b.startAt}|${b.endAt}`, b);
+      }
     }
 
     const data = (slots as Array<{
-      courtId: any; date: string; startAt: string; endAt: string; price: number;
+      _id: any; courtId: any; date: string; startAt: string; endAt: string; price: number;
     }>).map<SlotResponse>((s) => {
-      const key = `${s.startAt}|${s.endAt}`;
-      const b = bookedMap.get(key);
+      const b =
+        bookedBySlotId.get(String(s._id)) ||
+        bookedByTimeKey.get(`${s.startAt}|${s.endAt}`); // fallback cho dữ liệu cũ
 
       if (!b) {
         return {
@@ -158,6 +149,7 @@ router.get("/", optionalAuth, async (req: Request, res: Response) => {
         paymentMethod: b.paymentMethod,
         paymentStatus: b.paymentStatus,
         holdUntil: b.holdUntil ?? null,
+        timeslotId: b.timeslotId ? String(b.timeslotId) : null,
         ...(b.note ? { note: b.note } : {}),
       };
 

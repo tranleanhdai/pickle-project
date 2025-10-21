@@ -8,7 +8,8 @@ export function useAdminGuard() {
 
   useEffect(() => {
     if (!isLoading && data?.role !== "admin") {
-      nav.replace("Home"); // hoặc nav.goBack()
-    }
+  if (nav.canGoBack()) nav.goBack();
+  else nav.navigate("ProfileMain");
+}
   }, [isLoading, data, nav]);
 }

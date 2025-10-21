@@ -15,7 +15,12 @@ import dayjs from "dayjs";
 import { useQueryClient } from "@tanstack/react-query";
 import { useMe } from "../hooks/useMe";
 import { api } from "../api/client";
-import { useRecentBookings, type PaymentStatus, type PaymentMethod } from "../hooks/useMyBookings";
+import {
+  useRecentBookings,
+  type PaymentStatus,
+  type PaymentMethod,
+} from "../hooks/useMyBookings";
+import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 
 export default function ProfileScreen({ navigation }: any) {
   const qc = useQueryClient();
@@ -105,8 +110,17 @@ export default function ProfileScreen({ navigation }: any) {
   return (
     <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
       {/* Header */}
-      <View style={{ backgroundColor: "#6750A4", paddingTop: 48, paddingBottom: 88, paddingHorizontal: 16 }}>
-        <Text style={{ fontSize: 22, fontWeight: "700", color: "#fff", marginBottom: 16 }}>Hồ sơ cá nhân</Text>
+      <View
+        style={{
+          backgroundColor: "#6750A4",
+          paddingTop: 48,
+          paddingBottom: 88,
+          paddingHorizontal: 16,
+        }}
+      >
+        <Text style={{ fontSize: 22, fontWeight: "700", color: "#fff", marginBottom: 16 }}>
+          Hồ sơ cá nhân
+        </Text>
 
         {/* User Info Card */}
         <Card style={{ borderRadius: 16, overflow: "hidden" }}>
@@ -117,7 +131,9 @@ export default function ProfileScreen({ navigation }: any) {
                 <Text variant="titleMedium" style={{ fontWeight: "700", marginBottom: 4 }}>
                   {displayName}
                 </Text>
-                <Badge style={{ alignSelf: "flex-start" }}>{isAdmin ? "Quản trị" : "Thành viên"}</Badge>
+                <Badge style={{ alignSelf: "flex-start" }}>
+                  {isAdmin ? "Quản trị" : "Thành viên"}
+                </Badge>
               </View>
             </View>
 
@@ -150,7 +166,10 @@ export default function ProfileScreen({ navigation }: any) {
           </Card.Content>
         </Card>
 
-        {/* Menu Items */}
+        {/* ✅ Cụm nút quản trị ngay dưới “Cập nhật” */}
+        {isAdmin && <AdminQuickActions navigation={navigation} />}
+
+        {/* Menu Items (chỉ các mục thường) */}
         <Card style={{ borderRadius: 16 }}>
           <Card.Content style={{ padding: 0 }}>
             <MenuItem
@@ -187,13 +206,24 @@ export default function ProfileScreen({ navigation }: any) {
               {recent.data!.map((b) => (
                 <Card key={b.id} style={{ borderRadius: 14 }}>
                   <Card.Content style={{ padding: 14 }}>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start",
+                        marginBottom: 8,
+                      }}
+                    >
                       <View>
-                        <Text style={{ fontWeight: "700", marginBottom: 2 }}>{b.courtName || "—"}</Text>
+                        <Text style={{ fontWeight: "700", marginBottom: 2 }}>
+                          {b.courtName || "—"}
+                        </Text>
                       </View>
                       <HistoryStatusBadge status={b.paymentStatus} method={b.paymentMethod} />
                     </View>
-                    <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <View
+                      style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+                    >
                       <Text style={{ color: "#6b7280" }}>
                         {dayjs(b.date).format("DD/MM/YYYY")}  •  {b.startAt} - {b.endAt}
                       </Text>
@@ -230,6 +260,59 @@ export default function ProfileScreen({ navigation }: any) {
   );
 }
 
+function AdminQuickActions({ navigation }: { navigation: any }) {
+  const items = [
+    { label: "Bảng điều khiển", icon: "view-dashboard", go: () => navigation.navigate("Admin") },
+    { label: "Xác nhận CK", icon: "bank-check", go: () => navigation.navigate("AdminTransfers") },
+    { label: "Quản lý địa điểm", icon: "office-building", go: () => navigation.navigate("AdminVenues") },
+    { label: "Quản lý sân", icon: "tennis", go: () => navigation.navigate("AdminCourts") },
+    { label: "Gán ảnh cover", icon: "image-edit", go: () => navigation.navigate("AdminSetCover") },
+  ];
+
+  return (
+    <Card style={{ borderRadius: 16 }}>
+      <Card.Title title="Quản trị" />
+      <Card.Content>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12 }}>
+          {items.map((it) => (
+            <AdminAction key={it.label} label={it.label} icon={it.icon as any} onPress={it.go} />
+          ))}
+        </View>
+      </Card.Content>
+    </Card>
+  );
+}
+
+function AdminAction({
+  label,
+  icon,
+  onPress,
+}: {
+  label: string;
+  icon: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      android_ripple={{ color: "#E9E9EC" }}
+      style={{
+        width: "30%", // 3 cột
+        aspectRatio: 1.1,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: "#E5E7EB",
+        backgroundColor: "#fff",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <MaterialCommunityIcons name={icon as any} size={22} color="#6B4EFF" />
+      <Text style={{ marginTop: 6, fontSize: 12, textAlign: "center" }}>{label}</Text>
+    </Pressable>
+  );
+}
+
 function MutedRow({ label }: { label: string }) {
   return <Text style={{ color: "#6b7280" }}>{label}</Text>;
 }
@@ -261,7 +344,14 @@ function StatCard({ value, label, tint }: { value: string; label: string; tint: 
 function MenuItem({ label, onPress }: { label: string; onPress?: () => void }) {
   return (
     <Pressable onPress={onPress} android_ripple={{ color: "#E9E9EC" }}>
-      <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14 }}>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+        }}
+      >
         <Text style={{ flex: 1 }}>{label}</Text>
         <Text style={{ color: "#9CA3AF" }}>›</Text>
       </View>
