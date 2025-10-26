@@ -9,6 +9,89 @@ import { Venue } from "../models/Venue";
 
 const router = Router();
 
+router.get("/me", auth, async (req: AuthRequest, res) => {
+  try {
+    const userId = req.user!.id;
+
+    // Kiểu dữ liệu lean từ Mongo
+    type Doc = {
+      _id: Types.ObjectId;
+      courtId?: Types.ObjectId | string;
+      date: string;
+      startAt: string;
+      endAt: string;
+      price?: number;
+      userId: Types.ObjectId | string;
+      note?: string;
+      paymentMethod: "prepay_transfer" | "pay_later";
+      paymentStatus: "pending" | "awaiting_transfer" | "verifying" | "paid" | "failed" | "expired";
+      holdUntil?: Date | null;
+      timeslotId?: Types.ObjectId;
+      createdAt?: Date;
+    };
+
+    type CourtLean = { _id: Types.ObjectId; name: string; venueId?: Types.ObjectId | string };
+    type VenueLean = { _id: Types.ObjectId; name: string };
+
+    const docs = (await Booking.find({ userId })
+      .sort({ createdAt: -1 })
+      .select("_id courtId date startAt endAt price userId note paymentMethod paymentStatus holdUntil createdAt timeslotId")
+      .lean()) as Doc[];
+
+    if (!docs.length) return res.json([]);
+
+    const courtIds: string[] = Array.from(
+      new Set(
+        docs
+          .map((d: Doc) => (d.courtId ? String(d.courtId) : ""))
+          .filter((x: string) => Boolean(x))
+      )
+    );
+
+    const courtObjectIds = courtIds
+      .filter((id: string) => Types.ObjectId.isValid(id))
+      .map((id: string) => new Types.ObjectId(id));
+
+    const courts = (await Court.find({ _id: { $in: courtObjectIds } })
+      .select("_id name venueId")
+      .lean()) as CourtLean[];
+
+    const venueIds: string[] = Array.from(
+      new Set(
+        courts
+          .map((c: CourtLean) => (c.venueId ? String(c.venueId) : ""))
+          .filter((x: string) => Boolean(x))
+      )
+    );
+
+    const venueObjectIds = venueIds
+      .filter((id: string) => Types.ObjectId.isValid(id))
+      .map((id: string) => new Types.ObjectId(id));
+
+    const venues = (await Venue.find({ _id: { $in: venueObjectIds } })
+      .select("_id name")
+      .lean()) as VenueLean[];
+
+    const courtMap = new Map<string, CourtLean>(courts.map((c: CourtLean) => [String(c._id), c]));
+    const venueMap = new Map<string, VenueLean>(venues.map((v: VenueLean) => [String(v._id), v]));
+
+    const enriched = docs.map((d: Doc) => {
+      const c = courtMap.get(String(d.courtId ?? ""));
+      const v = c ? venueMap.get(String(c.venueId ?? "")) : undefined;
+      return {
+        id: String(d._id),
+        ...d,
+        courtName: c?.name,
+        venueName: v?.name,
+      };
+    });
+
+    return res.json(enriched);
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
 /**
  * GET / (ADMIN)
  * Query:

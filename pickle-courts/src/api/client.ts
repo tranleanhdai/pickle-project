@@ -6,7 +6,7 @@ import { createNavigationContainerRef } from "@react-navigation/native";
 export const navigationRef = createNavigationContainerRef<any>();
 
 // KHÔNG tự động lấy IP. Dev sửa FALLBACK/DEV_HOST theo mạng LAN.
-const FALLBACK = "http://192.168.1.93:3000";           // 👈 sửa IP LAN của bạn nếu cần
+const FALLBACK = "http://10.181.21.49:3000";           // 👈 sửa IP LAN của bạn nếu cần
 const DEV_HOST = process.env.EXPO_PUBLIC_DEV_HOST;    // ví dụ: 192.168.1.4
 
 const ROOT = __DEV__

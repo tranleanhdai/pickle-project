@@ -1,6 +1,6 @@
 // App.tsx
-import { useEffect } from "react";
-import { View, Text as RNText } from "react-native";
+import { useEffect, useState } from "react";
+import { View, ActivityIndicator, Text as RNText } from "react-native";
 import { NavigationContainer, CommonActions } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
@@ -11,6 +11,7 @@ import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import * as Linking from "expo-linking";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import HomeScreen from "./src/screens/HomeScreen";
 import VenueScreen from "./src/screens/VenueScreen";
@@ -195,11 +196,35 @@ export default function App() {
       require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/MaterialCommunityIcons.ttf"),
   });
 
-  useEffect(() => {
-    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
-  }, [fontsLoaded]);
+  // NEW: kiểm tra token trước khi render navigator
+  const [authChecked, setAuthChecked] = useState(false);
+  const [hasToken, setHasToken] = useState<boolean>(false);
 
-  if (!fontsLoaded) return null;
+  useEffect(() => {
+    (async () => {
+      try {
+        const t = await AsyncStorage.getItem("token");
+        setHasToken(!!t);
+      } finally {
+        setAuthChecked(true);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (fontsLoaded && authChecked) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded, authChecked]);
+
+  // Đợi cả fonts + auth check xong rồi mới render navigator (để initialRouteName dùng đúng)
+  if (!fontsLoaded || !authChecked) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
 
   return (
     <SafeAreaProvider>
@@ -221,7 +246,8 @@ export default function App() {
             }}
           >
             <RootStack.Navigator
-              initialRouteName={ROOT_ROUTES.MainTabs}
+              // Quan trọng: chọn route đầu dựa vào token
+              initialRouteName={hasToken ? ROOT_ROUTES.MainTabs : ROOT_ROUTES.Login}
               screenOptions={{ headerShown: false }}
             >
               {/* App chính (tabs) */}

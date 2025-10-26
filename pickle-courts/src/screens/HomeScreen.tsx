@@ -17,9 +17,11 @@ import { Text, Button, ActivityIndicator, FAB, Card } from "react-native-paper";
 import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
+import { useAllCourts } from "../hooks/useAllCourts"; // <-- thêm dòng này
 import { useVenues, type Venue } from "../hooks/useVenues";
 import { useCourts } from "../hooks/useCourts";
+// OPTIONAL: nếu bạn có hook này, hãy import thật sự thay vì declare bên dưới
+// import { useAllCourts } from "../hooks/useCourts";
 import type { Court } from "../api/courts";
 import { usePosts } from "../hooks/usePosts";
 import { addView } from "../api/posts";
@@ -29,6 +31,12 @@ import PostCard from "../components/PostCard";
 import VenueCard from "../components/VenueCard";
 import CourtHero from "../components/CourtHero";
 
+/** ===== Cấu hình =====
+ * Bật tìm kiếm toàn bộ sân trên mọi địa điểm:
+ * - Đặt true nếu bạn có hook useAllCourts().
+ * - Để false để giữ hành vi: chỉ tìm sân thuộc venue đang chọn.
+ */
+const SEARCH_ALL_COURTS = true;
 /* ===== Theme colors ===== */
 const COLORS = {
   primary: "#0ea5e9",
@@ -174,11 +182,12 @@ export default function HomeScreen() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // RN-safe diacritic strip (Hermes compatible)
   function norm(s?: string) {
     return (s || "")
       .toLowerCase()
       .normalize("NFD")
-      .replace(/\p{Diacritic}/gu, "");
+      .replace(/[\u0300-\u036f]/g, "");
   }
   function match(q: string, ...fields: (string | undefined)[]) {
     const qq = norm(q);
@@ -190,11 +199,16 @@ export default function HomeScreen() {
     | { type: "venue"; id: string; title: string; subtitle?: string; cover?: string }
     | { type: "court"; id: string; title: string; subtitle?: string; cover?: string; venueId?: string | null; venueName?: string | null };
 
+  const allCourtsQ = SEARCH_ALL_COURTS ? useAllCourts?.() : null;
+
   const suggestions: Suggest[] = useMemo(() => {
     if (!debounced) return [];
 
     const vArr: Venue[] = Array.isArray(venuesQ.data) ? (venuesQ.data as Venue[]) : [];
-    const cArr: Court[]  = Array.isArray(courtsQ.data) ? (courtsQ.data as Court[]) : [];
+    // nếu bật all courts thì lấy từ allCourtsQ, ngược lại chỉ lấy courts của venue hiện tại
+    const cArr: Court[] = SEARCH_ALL_COURTS
+      ? (Array.isArray(allCourtsQ?.data) ? (allCourtsQ!.data as Court[]) : [])
+      : (Array.isArray(courtsQ.data) ? (courtsQ.data as Court[]) : []);
 
     const currentVenueName: string | null =
       vArr.find((v: Venue) => idOf(v) === venueId)?.name ?? null;
@@ -211,18 +225,22 @@ export default function HomeScreen() {
 
     const cs: Suggest[] = cArr
       .filter((c: Court) => match(debounced, c.name, (c as any).code))
-      .map((c: Court) => ({
-        type: "court" as const,
-        id: idOf(c)!,
-        title: c.name,
-        subtitle: currentVenueName ?? undefined,
-        cover: (c as any).coverUrl,
-        venueId: venueId ?? null,
-        venueName: currentVenueName,
-      }));
+      .map((c: Court) => {
+        const vId = String((c as any).venueId ?? venueId ?? "");
+        const vName = vArr.find(v => idOf(v) === vId)?.name ?? currentVenueName ?? undefined;
+        return {
+          type: "court" as const,
+          id: idOf(c)!,
+          title: c.name,
+          subtitle: vName,
+          cover: (c as any).coverUrl,
+          venueId: vId || null,
+          venueName: vName,
+        };
+      });
 
     return [...cs, ...vs].slice(0, 8);
-  }, [debounced, venuesQ.data, courtsQ.data, venueId]);
+  }, [debounced, venuesQ.data, courtsQ.data, venueId, allCourtsQ?.data]);
 
   const suggestOpen = open && suggestions.length > 0;
 
@@ -329,6 +347,74 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               )}
             </View>
+
+            {/* DROPDOWN */}
+            {suggestOpen && (
+              <View
+                style={{
+                  position: "absolute",
+                  top: inputH + 8,
+                  left: 0,
+                  right: 0,
+                  backgroundColor: "#fff",
+                  borderRadius: 12,
+                  elevation: 12,
+                  shadowColor: "#000",
+                  shadowOpacity: 0.16,
+                  shadowRadius: 18,
+                  maxHeight: 320,
+                  overflow: "hidden",
+                  zIndex: 40,
+                }}
+              >
+                <FlatList
+                  data={suggestions}
+                  keyExtractor={(it, i) => `${it.type}-${it.id}-${i}`}
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => (
+                    <Pressable
+                      onPress={() => {
+                        setOpen(false);
+                        setSearch("");
+
+                        if (item.type === "venue") {
+                          // cập nhật state + điều hướng màn Venue
+                          setVenueId(item.id);
+                          setCourtId(null);
+                          const v = (venuesQ.data as any[])?.find(v => idOf(v) === item.id);
+                          navigation.navigate("Venue", {
+                            venueId: item.id,
+                            venueName: v?.name ?? item.title,
+                            venueAddress: v?.address,
+                          });
+                        } else {
+                          // court → điều hướng thẳng sang Court
+                          if (item.venueId) setVenueId(item.venueId);
+                          setCourtId(item.id);
+                          navigation.navigate("Court", {
+                            courtId: item.id,
+                            courtName: item.title,
+                            venueName: item.venueName,
+                            coverUrl: item.cover ?? null,
+                          });
+                        }
+                      }}
+                      style={{ flexDirection: "row", alignItems: "center", padding: 12, gap: 10 }}
+                    >
+                      {!!item.cover && (
+                        <Image source={{ uri: item.cover }} style={{ width: 44, height: 44, borderRadius: 8 }} />
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontWeight: "700" }}>{item.title}</Text>
+                        {!!item.subtitle && <Text style={{ color: "#6b7280", fontSize: 12 }}>{item.subtitle}</Text>}
+                      </View>
+                      <Text style={{ fontSize: 16 }}>{item.type === "venue" ? "📍" : "🏟️"}</Text>
+                    </Pressable>
+                  )}
+                  ItemSeparatorComponent={() => <View style={{ height: 1, backgroundColor: "#e5e7eb" }} />}
+                />
+              </View>
+            )}
           </View>
         </View>
       </View>
@@ -530,7 +616,7 @@ export default function HomeScreen() {
         )}
         onEndReachedThreshold={0.4}
         onEndReached={() => posts.fetchNext()}
-        ListFooterComponent={footer}  // <-- ĐẶT Ở CUỐI
+        ListFooterComponent={footer}
         ListFooterComponentStyle={{ paddingBottom: insets.bottom + 24 }}
         ListEmptyComponent={
           <Text style={{ paddingHorizontal: 16, paddingTop: 12 }}>

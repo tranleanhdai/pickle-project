@@ -50,7 +50,8 @@ function statusStyle(b: Booking) {
   }
 }
 
-const isUpcoming = (b: Booking) => dayjs(`${b.date}T${b.startAt}:00`).valueOf() > Date.now();
+const isUpcoming = (b: Booking) =>
+  dayjs(`${b.date} ${b.endAt}`, "YYYY-MM-DD HH:mm").valueOf() > Date.now();
 
 export default function MyBookingsScreen() {
   const qc = useQueryClient();

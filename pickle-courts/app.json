@@ -58,7 +58,7 @@
       "expo-asset"
     ],
     "extra": {
-      "apiUrl": "http://192.168.1.93:3000",
+      "apiUrl": "http://10.181.21.49:3000",
       "EXPO_PUBLIC_CLOUDINARY_CLOUD": "dqtssbmtq",
       "EXPO_PUBLIC_CLOUDINARY_PRESET": "pickle_unsigned",
       "eas": {

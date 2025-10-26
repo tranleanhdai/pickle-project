@@ -23,11 +23,6 @@ export async function createBooking(
   return data;
 }
 
-/** Lấy danh sách booking (của user hiện tại nếu không phải admin) */
-export async function listMyBookings() {
-  const { data } = await api.get("/bookings");
-  return Array.isArray(data) ? data : data?.items ?? [];
-}
 
 /** Hủy booking */
 export async function cancelBooking(id: string) {
@@ -39,4 +34,8 @@ export async function cancelBooking(id: string) {
 export async function updateBookingNote(id: string, note: string) {
   const { data } = await api.patch(`/bookings/${id}`, { note });
   return data;
+}
+export async function listMyBookings() {
+  const { data } = await api.get("/bookings/me"); // <— đổi sang /me
+  return Array.isArray(data) ? data : data?.items ?? [];
 }
