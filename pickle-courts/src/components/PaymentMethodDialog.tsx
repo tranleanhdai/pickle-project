@@ -28,8 +28,8 @@ const OPTIONS: Record<OptionKey, { title: string; subtitle: string; icon: string
     icon: "clock-outline",
   },
   prepay_transfer: {
-    title: "Chuyển khoản trước",
-    subtitle: "Tạo mã chuyển khoản, xác nhận xong là giữ chỗ thành công",
+    title: "Thanh toán online (VNPAY)",
+    subtitle: "Thanh toán qua VNPAY, xác nhận xong là giữ chỗ thành công",
     icon: "credit-card-outline",
   },
 };

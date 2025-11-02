@@ -263,7 +263,6 @@ export default function ProfileScreen({ navigation }: any) {
 function AdminQuickActions({ navigation }: { navigation: any }) {
   const items = [
     { label: "Bảng điều khiển", icon: "view-dashboard", go: () => navigation.navigate("Admin") },
-    { label: "Xác nhận CK", icon: "bank-check", go: () => navigation.navigate("AdminTransfers") },
     { label: "Quản lý địa điểm", icon: "office-building", go: () => navigation.navigate("AdminVenues") },
     { label: "Quản lý sân", icon: "tennis", go: () => navigation.navigate("AdminCourts") },
     { label: "Gán ảnh cover", icon: "image-edit", go: () => navigation.navigate("AdminSetCover") },

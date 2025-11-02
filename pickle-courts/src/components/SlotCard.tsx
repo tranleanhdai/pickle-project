@@ -7,7 +7,7 @@ type Props = {
   slot: Slot;
   isBooking?: boolean;
   onBook: (slot: Slot) => void;
-  onEditNote: (bookingId: string) => void;
+  onEditNote?: (bookingId: string) => void;
   onCancel: (bookingId: string) => void;
   disabled?: boolean;
   meId?: string;
@@ -108,11 +108,13 @@ export default function SlotCard({
   };
 
   const handleEditNote = () => {
-    const id = bookingId?.trim();
-    if (!canManage) return Alert.alert("Không thể sửa", "Bạn không sở hữu booking này.");
-    if (!id) return Alert.alert("Lỗi", "Booking không tồn tại.");
-    onEditNote(id);
-  };
+  const id = bookingId?.trim();
+  if (!canManage) return Alert.alert("Không thể sửa", "Bạn không sở hữu booking này.");
+  if (!id) return Alert.alert("Lỗi", "Booking không tồn tại.");
+  if (paymentStatus === "paid") return; // không cho sửa nếu đã thanh toán
+  if (!onEditNote) return;              // guard khi prop không truyền
+  onEditNote(id);                       // hoặc onEditNote?.(id)
+};
 
   return (
     <View style={{ padding: 16, borderRadius: 12, backgroundColor: "#fff", marginBottom: 12 }}>
@@ -127,26 +129,30 @@ export default function SlotCard({
       {statusInfo && <Text style={{ marginTop: 6, color: statusInfo.color }}>{statusInfo.text}</Text>}
 
       {canManage ? (
-        <View style={{ marginTop: 10 }}>
-          <Button mode="outlined" onPress={handleEditNote}>Ghi chú</Button>
-          <View style={{ height: 8 }} />
-          {paymentStatus !== "paid" && (
-            <Button mode="contained" onPress={handleCancel}>Hủy</Button>
-          )}
-        </View>
-      ) : isBooked || isPast ? (
-        <View style={{ height: 10 }} />
-      ) : (
-        <Button
-          mode="contained"
-          loading={isBooking}
-          disabled={isBooking || disabled}
-          onPress={() => onBook(slot)}
-          style={{ marginTop: 10, opacity: isBooking || disabled ? 0.6 : 1 }}
-        >
-          Đặt sân
-        </Button>
-      )}
+  <View style={{ marginTop: 10 }}>
+    {/* Chỉ render nút khi có onEditNote và chưa paid */}
+    {onEditNote && paymentStatus !== "paid" && (
+      <Button mode="outlined" onPress={handleEditNote}>Ghi chú</Button>
+    )}
+
+    <View style={{ height: 8 }} />
+    {paymentStatus !== "paid" && (
+      <Button mode="contained" onPress={handleCancel}>Hủy</Button>
+    )}
+  </View>
+) : isBooked || isPast ? (
+  <View style={{ height: 10 }} />
+) : (
+  <Button
+    mode="contained"
+    loading={isBooking}
+    disabled={isBooking || disabled}
+    onPress={() => onBook(slot)}
+    style={{ marginTop: 10, opacity: isBooking || disabled ? 0.6 : 1 }}
+  >
+    Đặt sân
+  </Button>
+)}
     </View>
   );
 }

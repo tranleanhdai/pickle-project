@@ -239,40 +239,45 @@ export default function CourtScreen() {
         ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
         contentContainerStyle={{ paddingBottom: 24, paddingHorizontal: 16 }}
         renderItem={({ item }) => {
-          const isMine =
-            !!(item as any).bookedByMe ||
-            String((item as any).booking?.userId || "") === meId;
+  const booking = (item as any).booking;
+  const isMine =
+    !!(item as any).bookedByMe || String(booking?.userId || "") === meId;
 
-          return (
-            <Card mode="elevated">
-              <Card.Content style={{ paddingVertical: 8 }}>
-                <SlotCard
-                  slot={{ ...(item as any), isMine }}
-                  meId={meId}
-                  disabled={
-                    (item as any).status === "blocked" &&
-                    (item as any).booking?.userId &&
-                    String((item as any).booking.userId) !== meId
-                  }
-                  isBooking={bookM.isPending}
-                  onBook={openBookDialog}
-                  onCancel={async (bookingId) => {
-                    if (!(await requireAuth())) return;
-                    cancelM.mutate(bookingId, {
-                      onSuccess: () => refetch(),
-                      onError: (err: any) =>
-                        Alert.alert(
-                          "Lỗi",
-                          err?.response?.data?.error || err?.message || "Hủy thất bại"
-                        ),
-                    });
-                  }}
-                  onEditNote={openEditDialog}
-                />
-              </Card.Content>
-            </Card>
-          );
-        }}
+  // ✅ đã thanh toán?
+  const isPaid = booking?.paymentStatus === "paid";
+
+  return (
+    <Card mode="elevated">
+      <Card.Content style={{ paddingVertical: 8 }}>
+        <SlotCard
+          slot={{ ...(item as any), isMine }}
+          meId={meId}
+          disabled={
+            (item as any).status === "blocked" &&
+            booking?.userId &&
+            String(booking.userId) !== meId
+          }
+          isBooking={bookM.isPending}
+          onBook={openBookDialog}
+          onCancel={async (bookingId) => {
+            if (!(await requireAuth())) return;
+            cancelM.mutate(bookingId, {
+              onSuccess: () => refetch(),
+              onError: (err: any) =>
+                Alert.alert(
+                  "Lỗi",
+                  err?.response?.data?.error || err?.message || "Hủy thất bại"
+                ),
+            });
+          }}
+          // ⬇️ chỉ cho sửa ghi chú nếu CHƯA paid
+          onEditNote={!isPaid ? openEditDialog : undefined}
+        />
+      </Card.Content>
+    </Card>
+  );
+}}
+
       />
 
       {/* Note dialog */}

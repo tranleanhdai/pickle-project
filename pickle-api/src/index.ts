@@ -15,7 +15,7 @@ import postsRouter from "./routes/posts";
 import uploadRouter from "./routes/upload";
 import courtsRouter from "./routes/courts";
 import venuesRouter from "./routes/venues";
-
+import adminSummaryRoutes from "./routes/admin.summary";
 import path from "path";
 
 async function main() {
@@ -23,6 +23,7 @@ async function main() {
 
   const app = express();
 
+  app.use("/api", adminSummaryRoutes);
   // CORS + body limit
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: "10mb" }));
