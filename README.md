@@ -193,7 +193,7 @@ This job runs every **60 seconds**.
 
 ## Author
 
-Developed as a personal project to practice **full-stack development and system design**.
+This project was built as a personal learning project to practice full-stack development and system design.
 ## Screenshots
 
 <p align="center">
